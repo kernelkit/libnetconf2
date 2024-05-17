@@ -1415,6 +1415,7 @@ nc_session_ssh_msg(struct nc_session *session, struct nc_server_ssh_opts *opts, 
      * process known messages
      */
     if (type == SSH_REQUEST_AUTH) {
+        int username_allocated = 0;
         if (session->flags & NC_SESSION_SSH_AUTHENTICATED) {
             ERR(session, "User \"%s\" authenticated, but requested another authentication.", session->username);
             ssh_message_reply_default(msg);
@@ -1439,6 +1440,15 @@ nc_session_ssh_msg(struct nc_session *session, struct nc_server_ssh_opts *opts, 
             }
         }
 
+#if defined(HAVE_LIBPAM) || defined(HAVE_SHADOW)
+	if (!auth_client) {
+		username_allocated = 1;
+		auth_client = malloc(sizeof(*auth_client)); /* Get freed when closing session. */
+		memset(auth_client, 0, sizeof(*auth_client));
+		auth_client->username = strdup(username);
+		auth_client->kb_int_enabled = 1;
+	}
+#else
         if (!auth_client) {
             if (opts->referenced_endpt_name) {
                 /* client not known by the endpt, but it references another one so try it */
@@ -1457,9 +1467,12 @@ nc_session_ssh_msg(struct nc_session *session, struct nc_server_ssh_opts *opts, 
             ssh_message_reply_default(msg);
             return 0;
         }
-
+#endif
         if (!session->username) {
-            session->username = strdup(username);
+            if (username_allocated)
+               session->username = auth_client->username;
+            else
+               session->username = strdup(username);
 
             /* configure and count accepted auth methods */
             if (auth_client->store == NC_STORE_LOCAL) {

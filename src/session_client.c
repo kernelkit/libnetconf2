@@ -115,6 +115,7 @@ nc_client_context_free(void *ptr)
     {
         /* for the main thread the same is done in nc_client_destroy() */
         free(c->opts.schema_searchpath);
+        free(c->unix_opts.username);
 
 #ifdef NC_ENABLED_SSH_TLS
         int i;
@@ -204,6 +205,7 @@ nc_client_context_location(void)
 }
 
 #define client_opts nc_client_context_location()->opts
+#define unix_opts nc_client_context_location()->unix_opts
 
 API void *
 nc_client_get_thread_context(void)
@@ -338,6 +340,22 @@ API void
 nc_client_set_new_session_context_autofill(int enabled)
 {
     client_opts.auto_context_fill_disabled = !enabled;
+}
+
+API int
+nc_client_unix_set_username(const char *username)
+{
+    char *new_user = NULL;
+
+    if (username) {
+        new_user = strdup(username);
+        NC_CHECK_ERRMEM_RET(!new_user, -1);
+    }
+
+    free(unix_opts.username);
+    unix_opts.username = new_user;
+
+    return 0;
 }
 
 struct module_info {
@@ -1477,6 +1495,59 @@ fail:
     return NULL;
 }
 
+/**
+ * @brief Establish a UNIX transport session.
+ *
+ * @param[in] session NETCONF session with the socket and username to use.
+ * @param[in] timeout_ms Timeout for writing the username.
+ * @return -1 on failure; 0 on timeout; 1 on success.
+ */
+static int
+connect_unix_session(struct nc_session *session, int timeout_ms)
+{
+    struct timespec ts_timeout;
+    size_t written = 0, len;
+    ssize_t r;
+
+    assert((session->ti_type == NC_TI_UNIX) && (session->ti.unixsock.sock  > -1) && session->username);
+
+    /* fill timespec */
+    if (timeout_ms > -1) {
+        nc_timeouttime_get(&ts_timeout, timeout_ms);
+    }
+
+    len = strlen(session->username) + 1;
+    while (1) {
+        /* write */
+        r = write(session->ti.unixsock.sock, session->username + written, len - written);
+        if ((r < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))) {
+            /* ignore */
+            r = 0;
+        }
+        if (r < 0) {
+            ERR(session, "Failed to write NETCONF username into UNIX session (%s).", strerror(errno));
+            return -1;
+        }
+
+        written += r;
+        if (len - written == 0) {
+            /* all the data written */
+            break;
+        }
+
+        /* sleep */
+        usleep(NC_TIMEOUT_STEP);
+
+        if ((timeout_ms > -1) && (nc_timeouttime_cur_diff(&ts_timeout) < 1)) {
+            /* final timeout */
+            ERR(session, "Failed to write NETCONF username into UNIX session for too long, disconnecting.");
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 API struct nc_session *
 nc_connect_unix(const char *address, struct ly_ctx *ctx)
 {
@@ -1518,24 +1589,36 @@ nc_connect_unix(const char *address, struct ly_ctx *ctx)
     /* transport specific data */
     session->ti_type = NC_TI_UNIX;
     session->ti.unixsock.sock = sock;
-    sock = -1; /* do not close sock in fail label anymore */
+    sock = -1;
 
+    /* socket path */
+    session->path = strdup(address);
+
+    /* NETCONF username */
+    if (unix_opts.username) {
+        username = strdup(unix_opts.username);
+    } else {
+        pw = nc_getpw(geteuid(), NULL, &pw_buf, &buf, &buf_size);
+        if (!pw) {
+            ERR(NULL, "Failed to find username for UID %u.", (unsigned int)geteuid());
+            goto fail;
+        }
+        username = strdup(pw->pw_name);
+        free(buf);
+    }
+    NC_CHECK_ERRMEM_GOTO(!username, , fail);
+    session->username = username;
+
+    /* connect UNIX session */
+    if (connect_unix_session(session, NC_TRANSPORT_TIMEOUT) != 1) {
+        goto fail;
+    }
+
+    /* create session context */
     if (nc_client_session_new_ctx(session, ctx) != EXIT_SUCCESS) {
         goto fail;
     }
     ctx = session->ctx;
-
-    session->path = strdup(address);
-
-    pw = nc_getpw(geteuid(), NULL, &pw_buf, &buf, &buf_size);
-    if (!pw) {
-        ERR(NULL, "Failed to find username for UID %u.", (unsigned int)geteuid());
-        goto fail;
-    }
-    username = strdup(pw->pw_name);
-    free(buf);
-    NC_CHECK_ERRMEM_GOTO(!username, , fail);
-    session->username = username;
 
     /* NETCONF handshake */
     if (nc_handshake_io(session) != NC_MSG_HELLO) {
@@ -2024,6 +2107,7 @@ nc_client_destroy(void)
 {
     pthread_mutex_destroy(&client_opts.ch_bind_lock);
     nc_client_set_schema_searchpath(NULL);
+    nc_client_unix_set_username(NULL);
 #ifdef NC_ENABLED_SSH_TLS
     nc_client_ch_del_bind(NULL, 0, 0);
     nc_client_ssh_destroy_opts();

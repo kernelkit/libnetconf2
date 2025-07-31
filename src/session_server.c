@@ -2325,6 +2325,74 @@ cleanup:
 }
 
 /**
+ * @brief Read the NETCONF user of a UNIX transport session.
+ *
+ * @param[in] session NETCONF session for logging.
+ * @param[in] sock Socket to read from.
+ * @param[in] timeout_ms Timeout for reading the whole username.
+ * @param[out] username Read NETCONF username.
+ * @return 1 on success, 0 on timeout, -1 on error.
+ */
+static int
+nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_ms, char **username)
+{
+    struct timespec ts_timeout;
+    size_t size = 32, rr = 0;
+    ssize_t r;
+
+    assert(sock > -1);
+
+    /* fill timespec */
+    if (timeout_ms > -1) {
+        nc_timeouttime_get(&ts_timeout, timeout_ms);
+    }
+
+    /* prepare username */
+    *username = malloc(size);
+    NC_CHECK_ERRMEM_RET(!*username, -1);
+
+    while (1) {
+        /* realloc as needed */
+        if (size == rr) {
+            size *= 2;
+            *username = nc_realloc(*username, size);
+            NC_CHECK_ERRMEM_RET(!*username, -1);
+        }
+
+        /* read */
+        r = read(sock, *username + rr, 1);
+        if ((r < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))) {
+            /* ignore */
+            r = 0;
+        }
+        if (r < 0) {
+            ERR(session, "Failed to read NETCONF username from UNIX session (%s).", strerror(errno));
+            return -1;
+        }
+
+        if ((*username)[rr] == '\0') {
+            /* whole username read */
+            break;
+        }
+
+        if (!r) {
+            /* sleep */
+            usleep(NC_TIMEOUT_STEP);
+
+            if ((timeout_ms > -1) && (nc_timeouttime_cur_diff(&ts_timeout) < 1)) {
+                /* final timeout */
+                ERR(session, "Failed to read NETCONF username from a UNIX session for too long, disconnecting.");
+                return 0;
+            }
+        } else {
+            rr += r;
+        }
+    }
+
+    return 1;
+}
+
+/**
  * @brief Fully accept a session on a connected UNIX socket.
  *
  * @param[in] session Session to use.
@@ -2336,37 +2404,50 @@ static int
 nc_accept_unix_session(struct nc_session *session, int sock)
 {
     struct passwd *pw, pw_buf;
-    char *username;
+    char *username, *buf = NULL;
+    const char *pwname;
     uid_t uid = 0;
-    char *buf = NULL;
     size_t buf_len = 0;
 
+    /* get UID of the connected peer on the socket */
     if (unsock_get_uid(sock, &uid)) {
         ERR(session, "Failed to get UID of a socket (%s).", strerror(errno));
-        close(sock);
-        return -1;
+        goto error;
     }
 
+    /* get the connected process system user from the UID */
     pw = nc_getpw(uid, NULL, &pw_buf, &buf, &buf_len);
-    if (pw == NULL) {
-        ERR(session, "Failed to find username for uid=%u (%s).", uid, strerror(errno));
-        close(sock);
-        return -1;
+    if (!pw) {
+        ERR(session, "Failed to find username for UID %u (%s).", uid, strerror(errno));
+        goto error;
+    }
+    pwname = pw->pw_name;
+
+    /* read the NETCONF username */
+    if (nc_accept_unix_read_username(session, sock, NC_TRANSPORT_TIMEOUT, &username) != 1) {
+        goto error;
     }
 
-    username = strdup(pw->pw_name);
-    free(buf);
-    if (username == NULL) {
-        ERRMEM;
-        close(sock);
-        return -1;
+    /* authenticate */
+    if (strcmp(pwname, username)) {
+        ERR(session, "UNIX system user \"%s\" tried to authenticate as invalid user \"%s\", disconnecting.", pwname, username);
+        free(username);
+        goto error;
     }
+    VRB(session, "User \"%s\" authenticated (UNIX socket system user \"%s\").", username, pwname);
 
+    /* fill session */
     session->username = username;
     session->ti_type = NC_TI_UNIX;
     session->ti.unixsock.sock = sock;
 
+    free(buf);
     return 1;
+
+error:
+    close(sock);
+    free(buf);
+    return -1;
 }
 
 API int

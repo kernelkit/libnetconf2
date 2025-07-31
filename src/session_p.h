@@ -409,6 +409,10 @@ struct nc_bind {
     int pollin;     /**< Specifies, which sockets to poll on. */
 };
 
+struct nc_client_unix_opts {
+    char *username;
+};
+
 #ifdef NC_ENABLED_SSH_TLS
 
 /* number of all supported authentication methods */
@@ -498,6 +502,8 @@ struct nc_client_opts {
 struct nc_client_context {
     unsigned int refcount;
     struct nc_client_opts opts;
+
+    struct nc_client_unix_opts unix_opts;
 
 #ifdef NC_ENABLED_SSH_TLS
     struct nc_client_ssh_opts ssh_opts;

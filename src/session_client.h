@@ -4,7 +4,7 @@
  * @brief libnetconf2 session client manipulation
  *
  * @copyright
- * Copyright (c) 2015 - 2021 CESNET, z.s.p.o.
+ * Copyright (c) 2015 - 2025 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -88,6 +88,14 @@ ly_module_imp_clb nc_client_get_schema_callback(void **user_data);
  * @param[in] enabled Whether context autofill is enabled or disabled.
  */
 void nc_client_set_new_session_context_autofill(int enabled);
+
+/**
+ * @brief Set the NETCONF user of a UNIX socket connection. By default it is the system user of the client process.
+ *
+ * @param[in] username Username to authenticate as when creating a new UNIX socket NETCONF session.
+ * @return 0 on success, -1 on error.
+ */
+int nc_client_unix_set_username(const char *username);
 
 /**
  * @brief Set client session context to support schema-mount, if possible.

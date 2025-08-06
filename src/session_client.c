@@ -1495,31 +1495,22 @@ fail:
     return NULL;
 }
 
-/**
- * @brief Establish a UNIX transport session.
- *
- * @param[in] session NETCONF session with the socket and username to use.
- * @param[in] timeout_ms Timeout for writing the username.
- * @return -1 on failure; 0 on timeout; 1 on success.
- */
-static int
-connect_unix_session(struct nc_session *session, int timeout_ms)
+int
+nc_connect_unix_session(struct nc_session *session, int sock, const char *username, int timeout_ms)
 {
     struct timespec ts_timeout;
     size_t written = 0, len;
     ssize_t r;
-
-    assert((session->ti_type == NC_TI_UNIX) && (session->ti.unixsock.sock  > -1) && session->username);
 
     /* fill timespec */
     if (timeout_ms > -1) {
         nc_timeouttime_get(&ts_timeout, timeout_ms);
     }
 
-    len = strlen(session->username) + 1;
+    len = strlen(username) + 1;
     while (1) {
         /* write */
-        r = write(session->ti.unixsock.sock, session->username + written, len - written);
+        r = write(sock, username + written, len - written);
         if ((r < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))) {
             /* ignore */
             r = 0;
@@ -1610,7 +1601,7 @@ nc_connect_unix(const char *address, struct ly_ctx *ctx)
     session->username = username;
 
     /* connect UNIX session */
-    if (connect_unix_session(session, NC_TRANSPORT_TIMEOUT) != 1) {
+    if (nc_connect_unix_session(session, session->ti.unixsock.sock, session->username, NC_TRANSPORT_TIMEOUT) != 1) {
         goto fail;
     }
 

@@ -184,14 +184,13 @@ nc_read(struct nc_session *session, char *buf, uint32_t count, uint32_t inact_ti
  * @return Number of characters read;
  * @return -1 on error.
  */
-static ssize_t
+static int
 nc_read_until(struct nc_session *session, const char *endtag, uint32_t inact_timeout, struct timespec *ts_act_timeout,
         char **buf, uint32_t *buf_size)
 {
     char *local_buf = NULL;
+    int r, len, i, matched = 0, count = 0;
     uint32_t local_size = 0;
-    size_t r, len, i, matched = 0;
-    ssize_t count = 0;
 
     assert(session);
     assert(endtag);
@@ -204,7 +203,7 @@ nc_read_until(struct nc_session *session, const char *endtag, uint32_t inact_tim
     len = strlen(endtag);
     do {
         /* resize buffer if needed */
-        if ((count + (len - matched)) > *buf_size) {
+        if ((count + (len - matched)) > (signed)*buf_size) {
             *buf_size += NC_READ_BUF_SIZE_STEP;
             *buf = nc_realloc(*buf, (*buf_size + 1) * sizeof **buf);
             NC_CHECK_ERRMEM_GOTO(!*buf, count = -1, cleanup);
@@ -241,15 +240,14 @@ cleanup:
 }
 
 int
-nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, int passing_io_lock)
+nc_read_msg_io(struct nc_session *session, int io_timeout, int passing_io_lock, char **buf, uint32_t *buf_len)
 {
-    int ret = 1, r, io_locked = passing_io_lock;
-    char *data = NULL, *frame_size_buf = NULL;
-    uint32_t chunk_len, frame_buf_len, data_len = 0, inact_timeout;
+    int ret = -1, r, io_locked = 0, chunk_len, buf_used = 0;
+    char *frame_size_buf = NULL;
+    uint32_t inact_timeout, frame_buf_len;
     struct timespec ts_act_timeout;
 
-    assert(session && msg);
-    *msg = NULL;
+    assert(session && buf && buf_len);
 
     /* use timeout in milliseconds instead seconds */
     inact_timeout = NC_READ_INACT_TIMEOUT * 1000;
@@ -262,7 +260,7 @@ nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, i
 
     nc_timeouttime_get(&ts_act_timeout, NC_READ_ACT_TIMEOUT * 1000);
 
-    if (!io_locked) {
+    if (!passing_io_lock) {
         /* SESSION IO LOCK */
         ret = nc_session_io_lock(session, io_timeout, __func__);
         if (ret < 1) {
@@ -273,17 +271,18 @@ nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, i
 
     /* read the message */
     switch (session->version) {
-    case NC_VERSION_10:
-        r = nc_read_until(session, NC_VERSION_10_ENDTAG, inact_timeout, &ts_act_timeout, &data, &data_len);
+    case NC_PROT_VERSION_10:
+        r = nc_read_until(session, NC_VERSION_10_ENDTAG, inact_timeout, &ts_act_timeout, buf, buf_len);
         if (r == -1) {
             ret = r;
             goto cleanup;
         }
 
         /* cut off the end tag */
-        data[r - NC_VERSION_10_ENDTAG_LEN] = '\0';
+        ret = r - NC_VERSION_10_ENDTAG_LEN;
+        (*buf)[ret] = '\0';
         break;
-    case NC_VERSION_11:
+    case NC_PROT_VERSION_11:
         /* prepare the buffer large enough for reading the framing chunk size */
         frame_buf_len = 11;
         frame_size_buf = malloc(frame_buf_len + 1);
@@ -303,7 +302,7 @@ nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, i
 
             if (!strcmp(frame_size_buf, "#\n")) {
                 /* end of chunked framing message */
-                if (!data) {
+                if (!buf_used) {
                     ERR(session, "Invalid frame chunk delimiters.");
                     ret = -2;
                     goto cleanup;
@@ -320,37 +319,29 @@ nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, i
             }
 
             /* now we have size of next chunk, prepare a buffer large enough */
-            data = nc_realloc(data, data_len + chunk_len + 1);
-            NC_CHECK_ERRMEM_GOTO(!data, ret = -1, cleanup);
+            if ((signed)*buf_len < buf_used + chunk_len + 1) {
+                *buf_len = buf_used + chunk_len + 1;
+                *buf = nc_realloc(*buf, *buf_len);
+                NC_CHECK_ERRMEM_GOTO(!*buf, ret = -1, cleanup);
+            }
 
             /* read the next chunk */
-            r = nc_read(session, data + data_len, chunk_len, inact_timeout, &ts_act_timeout);
+            r = nc_read(session, *buf + buf_used, chunk_len, inact_timeout, &ts_act_timeout);
             if (r == -1) {
                 ret = r;
                 goto cleanup;
             }
 
             /* update data length and terminate the data */
-            data_len += chunk_len;
-            data[data_len] = '\0';
+            buf_used += chunk_len;
+            (*buf)[buf_used] = '\0';
         }
 
+        ret = buf_used;
         break;
     }
 
-    /* SESSION IO UNLOCK */
-    assert(io_locked);
-    nc_session_io_unlock(session, __func__);
-    io_locked = 0;
-
-    DBG(session, "Received message:\n%s\n", data);
-
-    /* build an input structure, eats data */
-    if (ly_in_new_memory(data, msg)) {
-        ret = -1;
-        goto cleanup;
-    }
-    data = NULL;
+    DBG(session, "Received message:\n%s\n", *buf);
 
 cleanup:
     if (io_locked) {
@@ -358,7 +349,6 @@ cleanup:
         nc_session_io_unlock(session, __func__);
     }
     free(frame_size_buf);
-    free(data);
     return ret;
 }
 
@@ -440,7 +430,7 @@ nc_read_poll(struct nc_session *session, int io_timeout)
         session->status = NC_STATUS_INVALID;
         session->term_reason = NC_SESSION_TERM_OTHER;
         return -1;
-    } else { /* status > 0 */
+    } else {
         /* in case of standard (non-libssh) poll, there still can be an error */
         if (fds.revents & POLLERR) {
             ERR(session, "Communication channel error.");
@@ -465,6 +455,8 @@ int
 nc_read_msg_poll_io(struct nc_session *session, int io_timeout, struct ly_in **msg)
 {
     int ret;
+    uint32_t buf_len = 0;
+    char *buf = NULL;
 
     assert(msg);
     *msg = NULL;
@@ -489,8 +481,22 @@ nc_read_msg_poll_io(struct nc_session *session, int io_timeout, struct ly_in **m
         return ret;
     }
 
-    /* SESSION IO LOCK passed down */
-    return nc_read_msg_io(session, io_timeout, msg, 1);
+    /* read msg */
+    ret = nc_read_msg_io(session, io_timeout, 1, &buf, &buf_len);
+    if (ret > 0) {
+        ret = 1;
+    }
+
+    /* SESSION IO UNLOCK */
+    nc_session_io_unlock(session, __func__);
+
+    /* create input */
+    if (ly_in_new_memory(buf, msg)) {
+        free(buf);
+        return -1;
+    }
+
+    return ret;
 }
 
 /* does not really log, only fatal errors */
@@ -535,12 +541,6 @@ nc_session_is_connected(const struct nc_session *session)
     return 1;
 }
 
-struct nc_wclb_arg {
-    struct nc_session *session;
-    char buf[NC_WRITE_CHUNK_SIZE_MAX];
-    uint32_t len;
-};
-
 /**
  * @brief Write to a NETCONF session.
  *
@@ -577,7 +577,7 @@ nc_write(struct nc_session *session, const void *buf, uint32_t count)
         case NC_TI_UNIX:
             fd = session->ti_type == NC_TI_FD ? session->ti.fd.out : session->ti.unixsock.sock;
             c = write(fd, (char *)(buf + written), count - written);
-            if ((c < 0) && (errno == EAGAIN)) {
+            if ((c < 0) && ((errno == EAGAIN) || (errno = EWOULDBLOCK))) {
                 c = 0;
             } else if ((c < 0) && (errno == EINTR)) {
                 c = 0;
@@ -645,7 +645,7 @@ nc_write_starttag_and_msg(struct nc_session *session, const void *buf, uint32_t 
     int ret = 0, r;
     char chunksize[24];
 
-    if (session->version == NC_VERSION_11) {
+    if (session->version == NC_PROT_VERSION_11) {
         r = sprintf(chunksize, "\n#%" PRIu32 "\n", count);
 
         r = nc_write(session, chunksize, r);
@@ -676,7 +676,7 @@ nc_write_endtag(struct nc_session *session)
 {
     int ret;
 
-    if (session->version == NC_VERSION_11) {
+    if (session->version == NC_PROT_VERSION_11) {
         ret = nc_write(session, "\n##\n", 4);
     } else {
         ret = nc_write(session, "]]>]]>", 6);
@@ -706,32 +706,21 @@ nc_write_clb_flush(struct nc_wclb_arg *warg)
     return ret;
 }
 
-/**
- * @brief Write callback buffering the data in a write structure.
- *
- * @param[in] arg Write structure used for buffering.
- * @param[in] buf Buffer to write.
- * @param[in] count Count of bytes to write from @p buf.
- * @param[in] xmlcontent Whether the data are actually printed as part of an XML in which case they need to be encoded.
- * @return Number of written bytes.
- * @return -1 on error.
- */
-static ssize_t
-nc_write_clb(void *arg, const void *buf, uint32_t count, int xmlcontent)
+int
+nc_write_clb(struct nc_wclb_arg *arg, const void *buf, uint32_t count, int xmlcontent)
 {
-    ssize_t ret = 0, c;
+    int ret = 0, c;
     uint32_t l;
-    struct nc_wclb_arg *warg = arg;
 
     if (!buf) {
-        c = nc_write_clb_flush(warg);
+        c = nc_write_clb_flush(arg);
         if (c == -1) {
             return -1;
         }
         ret += c;
 
         /* endtag */
-        c = nc_write_endtag(warg->session);
+        c = nc_write_endtag(arg->session);
         if (c == -1) {
             return -1;
         }
@@ -740,9 +729,9 @@ nc_write_clb(void *arg, const void *buf, uint32_t count, int xmlcontent)
         return ret;
     }
 
-    if (warg->len && (warg->len + count > NC_WRITE_CHUNK_SIZE_MAX)) {
+    if (arg->len && (arg->len + count > NC_WRITE_CHUNK_SIZE_MAX)) {
         /* dump current buffer */
-        c = nc_write_clb_flush(warg);
+        c = nc_write_clb_flush(arg);
         if (c == -1) {
             return -1;
         }
@@ -751,7 +740,7 @@ nc_write_clb(void *arg, const void *buf, uint32_t count, int xmlcontent)
 
     if (!xmlcontent && (count > NC_WRITE_CHUNK_SIZE_MAX)) {
         /* write directly */
-        c = nc_write_starttag_and_msg(warg->session, buf, count);
+        c = nc_write_starttag_and_msg(arg->session, buf, count);
         if (c == -1) {
             return -1;
         }
@@ -760,9 +749,9 @@ nc_write_clb(void *arg, const void *buf, uint32_t count, int xmlcontent)
         /* keep in buffer and write later */
         if (xmlcontent) {
             for (l = 0; l < count; l++) {
-                if (warg->len + 5 >= NC_WRITE_CHUNK_SIZE_MAX) {
+                if (arg->len + 5 >= NC_WRITE_CHUNK_SIZE_MAX) {
                     /* buffer is full */
-                    c = nc_write_clb_flush(warg);
+                    c = nc_write_clb_flush(arg);
                     if (c == -1) {
                         return -1;
                     }
@@ -771,29 +760,29 @@ nc_write_clb(void *arg, const void *buf, uint32_t count, int xmlcontent)
                 switch (((char *)buf)[l]) {
                 case '&':
                     ret += 5;
-                    memcpy(&warg->buf[warg->len], "&amp;", 5);
-                    warg->len += 5;
+                    memcpy(&arg->buf[arg->len], "&amp;", 5);
+                    arg->len += 5;
                     break;
                 case '<':
                     ret += 4;
-                    memcpy(&warg->buf[warg->len], "&lt;", 4);
-                    warg->len += 4;
+                    memcpy(&arg->buf[arg->len], "&lt;", 4);
+                    arg->len += 4;
                     break;
                 case '>':
                     /* not needed, just for readability */
                     ret += 4;
-                    memcpy(&warg->buf[warg->len], "&gt;", 4);
-                    warg->len += 4;
+                    memcpy(&arg->buf[arg->len], "&gt;", 4);
+                    arg->len += 4;
                     break;
                 default:
                     ret++;
-                    memcpy(&warg->buf[warg->len], &((char *)buf)[l], 1);
-                    warg->len++;
+                    memcpy(&arg->buf[arg->len], &((char *)buf)[l], 1);
+                    arg->len++;
                 }
             }
         } else {
-            memcpy(&warg->buf[warg->len], buf, count);
-            warg->len += count; /* is <= NC_WRITE_CHUNK_SIZE_MAX */
+            memcpy(&arg->buf[arg->len], buf, count);
+            arg->len += count; /* is <= NC_WRITE_CHUNK_SIZE_MAX */
             ret += count;
         }
     }
@@ -1011,7 +1000,7 @@ nc_write_msg_io(struct nc_session *session, int io_timeout, int type, ...)
         break;
 
     case NC_MSG_HELLO:
-        if (session->version != NC_VERSION_10) {
+        if (session->version != NC_PROT_VERSION_10) {
             ret = NC_MSG_ERROR;
             goto cleanup;
         }

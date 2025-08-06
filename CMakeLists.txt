@@ -113,7 +113,8 @@ set(libsrc
     src/session_client.c
     src/session_server.c
     src/server_config.c
-    src/server_config_util.c)
+    src/server_config_util.c
+    src/proxy_unix.c)
 
 if(ENABLE_SSH_TLS)
     list(APPEND libsrc
@@ -138,7 +139,8 @@ set(headers
     src/session_client_ch.h
     src/session_server.h
     src/session_server_ch.h
-    src/server_config.h)
+    src/server_config.h
+    src/proxy_unix.h)
 
 # files to generate doxygen from
 set(doxy_files
@@ -152,7 +154,8 @@ set(doxy_files
     src/session_client_ch.h
     src/session_server.h
     src/session_server_ch.h
-    src/server_config.h)
+    src/server_config.h
+    src/proxy_unix.h)
 
 # source files to be covered by the 'format' target
 set(format_sources

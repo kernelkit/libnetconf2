@@ -27,6 +27,7 @@
 #include <cmocka.h>
 
 #include "ln2_test.h"
+#include "nc_client.h"
 
 static int
 setup_f(void **state)
@@ -141,12 +142,85 @@ test_invalid_user(void **state)
     }
 }
 
+/* TEST */
+static void *
+proxy_client_thread(void *arg)
+{
+    int ret, fd;
+    const char *msg;
+    char *buf = NULL;
+    uint32_t buf_len = 0;
+    struct ln2_test_ctx *test_ctx = arg;
+
+    ret = nc_client_set_schema_searchpath(MODULES_DIR);
+    assert_int_equal(ret, 0);
+
+    /* wait before connecting */
+    pthread_barrier_wait(&test_ctx->barrier);
+
+    /* connect the proxy */
+    fd = nc_proxy_unix_connect("/tmp/nc2_test_unix_sock", NULL);
+    assert_int_not_equal(fd, 0);
+
+    /* send the hello message */
+    msg = "<hello xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">"
+            "<capabilities>"
+            "<capability>urn:ietf:params:netconf:base:1.0</capability>"
+            "<capability>urn:ietf:params:netconf:base:1.1</capability>"
+            "</capabilities>"
+            "</hello>";
+    ret = nc_proxy_write_msg(fd, NC_PROT_VERSION_10, msg, strlen(msg));
+    assert_int_equal(ret, strlen(msg));
+
+    /* read the hello message */
+    ret = nc_proxy_read_msg(fd, NC_PROT_VERSION_10, -1, &buf, &buf_len);
+    assert_int_not_equal(ret, -1);
+
+    /* close session */
+    msg = "<rpc xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"first\">"
+            "<close-session/>"
+            "</rpc>";
+    ret = nc_proxy_write_msg(fd, NC_PROT_VERSION_11, msg, strlen(msg));
+    assert_int_equal(ret, strlen(msg));
+
+    /* read OK reply */
+    ret = nc_proxy_read_msg(fd, NC_PROT_VERSION_11, -1, &buf, &buf_len);
+    assert_int_not_equal(ret, -1);
+    assert_string_equal(buf, "<rpc-reply xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"first\"><ok/></rpc-reply>");
+
+    /* close the proxy */
+    ret = nc_proxy_unix_close(fd);
+    assert_int_equal(ret, 0);
+
+    free(buf);
+    return NULL;
+}
+
+static void
+test_proxy(void **state)
+{
+    int ret, i;
+    pthread_t tids[2];
+
+    assert_non_null(state);
+
+    ret = pthread_create(&tids[0], NULL, proxy_client_thread, *state);
+    assert_int_equal(ret, 0);
+    ret = pthread_create(&tids[1], NULL, ln2_glob_test_server_thread, *state);
+    assert_int_equal(ret, 0);
+
+    for (i = 0; i < 2; i++) {
+        pthread_join(tids[i], NULL);
+    }
+}
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_connect),
         cmocka_unit_test(test_invalid_user),
+        cmocka_unit_test(test_proxy),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

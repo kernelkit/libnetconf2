@@ -71,6 +71,14 @@ typedef enum {
 #endif /* NC_ENABLED_SSH_TLS */
 
 /**
+ * @brief Enumeration of the supported NETCONF protocol versions
+ */
+typedef enum {
+    NC_PROT_VERSION_10 = 0, /**< NETCONF 1.0 - RFC 4741, 4742 */
+    NC_PROT_VERSION_11 = 1  /**< NETCONF 1.1 - RFC 6241, 6242 */
+} NC_PROT_VERSION;
+
+/**
  * @brief Enumeration of possible session statuses
  */
 typedef enum {

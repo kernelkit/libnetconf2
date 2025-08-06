@@ -215,8 +215,8 @@ test_send_recv_ok_10(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_10;
-    client_session->version = NC_VERSION_10;
+    server_session->version = NC_PROT_VERSION_10;
+    client_session->version = NC_PROT_VERSION_10;
 
     test_send_recv_ok();
 }
@@ -226,8 +226,8 @@ test_send_recv_ok_11(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_11;
-    client_session->version = NC_VERSION_11;
+    server_session->version = NC_PROT_VERSION_11;
+    client_session->version = NC_PROT_VERSION_11;
 
     test_send_recv_ok();
 }
@@ -280,8 +280,8 @@ test_send_recv_error_10(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_10;
-    client_session->version = NC_VERSION_10;
+    server_session->version = NC_PROT_VERSION_10;
+    client_session->version = NC_PROT_VERSION_10;
 
     test_send_recv_error();
 }
@@ -291,8 +291,8 @@ test_send_recv_error_11(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_11;
-    client_session->version = NC_VERSION_11;
+    server_session->version = NC_PROT_VERSION_11;
+    client_session->version = NC_PROT_VERSION_11;
 
     test_send_recv_error();
 }
@@ -341,8 +341,8 @@ test_send_recv_data_10(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_10;
-    client_session->version = NC_VERSION_10;
+    server_session->version = NC_PROT_VERSION_10;
+    client_session->version = NC_PROT_VERSION_10;
 
     test_send_recv_data();
 }
@@ -352,8 +352,8 @@ test_send_recv_data_11(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_11;
-    client_session->version = NC_VERSION_11;
+    server_session->version = NC_PROT_VERSION_11;
+    client_session->version = NC_PROT_VERSION_11;
 
     test_send_recv_data();
 }
@@ -486,8 +486,8 @@ test_send_recv_notif_10(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_10;
-    client_session->version = NC_VERSION_10;
+    server_session->version = NC_PROT_VERSION_10;
+    client_session->version = NC_PROT_VERSION_10;
 
     test_send_recv_notif();
 }
@@ -497,8 +497,8 @@ test_send_recv_notif_11(void **state)
 {
     (void)state;
 
-    server_session->version = NC_VERSION_11;
-    client_session->version = NC_VERSION_11;
+    server_session->version = NC_PROT_VERSION_11;
+    client_session->version = NC_PROT_VERSION_11;
 
     test_send_recv_notif();
 }
@@ -516,8 +516,8 @@ test_send_recv_malformed_10(void **state)
 
     (void)state;
 
-    server_session->version = NC_VERSION_10;
-    client_session->version = NC_VERSION_10;
+    server_session->version = NC_PROT_VERSION_10;
+    client_session->version = NC_PROT_VERSION_10;
 
     /* write malformed message */
     msg =

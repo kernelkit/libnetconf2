@@ -741,14 +741,6 @@ typedef enum {
 } NC_SIDE;
 
 /**
- * @brief Enumeration of the supported NETCONF protocol versions
- */
-enum nc_version {
-    NC_VERSION_10 = 0,  /**< NETCONF 1.0 - RFC 4741, 4742 */
-    NC_VERSION_11 = 1   /**< NETCONF 1.1 - RFC 6241, 6242 */
-};
-
-/**
  * @brief Container to serialize RPC messages
  */
 struct nc_msg_cont {
@@ -768,7 +760,7 @@ struct nc_session {
 
     /* NETCONF data */
     uint32_t id;                 /**< NETCONF session ID (session-id-type) */
-    enum nc_version version;          /**< NETCONF protocol version */
+    NC_PROT_VERSION version;     /**< NETCONF protocol version */
 
     /* Transport implementation */
     NC_TRANSPORT_IMPL ti_type;   /**< transport implementation type to select items from ti union */
@@ -1166,6 +1158,17 @@ int nc_sock_accept_binds(struct nc_bind *binds, uint16_t bind_count, pthread_mut
         char **host, uint16_t *port, uint16_t *idx, int *sock);
 
 /**
+ * @brief Establish a UNIX transport session.
+ *
+ * @param[in] session NETCONF session for logging.
+ * @param[in] sock Connected socket to use.
+ * @param[in] username NETCONF username to use.
+ * @param[in] timeout_ms Timeout for writing the username.
+ * @return -1 on failure; 0 on timeout; 1 on success.
+ */
+int nc_connect_unix_session(struct nc_session *session, int sock, const char *username, int timeout_ms);
+
+/**
  * @brief Gets an endpoint structure based on its name.
  *
  * @param[in] name The name of the endpoint.
@@ -1324,16 +1327,34 @@ int nc_read_msg_poll_io(struct nc_session *session, int io_timeout, struct ly_in
  *
  * @param[in] session NETCONF session from which the message is being read.
  * @param[in] io_timeout Timeout in milliseconds. Negative value means infinite timeout,
- *            zero value causes to return immediately.
- * @param[out] msg Input handled with the NETCONF message (application layer data).
- * @param[in] passing_io_lock True if @p session IO lock is already held. This function always unlocks
- *            it before returning!
- * @return 1 on success.
+ * zero value causes to return immediately.
+ * @param[in] passing_io_lock True if @p session IO lock is already held.
+ * @param[in,out] buf Buffer with the NETCONF message (application layer data).
+ * @param[in,out] buf_len Length of @p buf.
+ * @return Number of message characters read on success.
  * @return 0 on timeout.
  * @return -1 on error.
  * @return -2 on malformed message error.
  */
-int nc_read_msg_io(struct nc_session *session, int io_timeout, struct ly_in **msg, int passing_io_lock);
+int nc_read_msg_io(struct nc_session *session, int io_timeout, int passing_io_lock, char **buf, uint32_t *buf_len);
+
+struct nc_wclb_arg {
+    struct nc_session *session;
+    char buf[NC_WRITE_CHUNK_SIZE_MAX];
+    uint32_t len;
+};
+
+/**
+ * @brief Write callback buffering the data in a write structure.
+ *
+ * @param[in] arg Write structure used for buffering.
+ * @param[in] buf Buffer to write, NULL causes flush of any buffered data.
+ * @param[in] count Count of bytes to write from @p buf.
+ * @param[in] xmlcontent Whether the data are actually printed as part of an XML in which case they need to be encoded.
+ * @return Number of written bytes.
+ * @return -1 on error.
+ */
+int nc_write_clb(struct nc_wclb_arg *arg, const void *buf, uint32_t count, int xmlcontent);
 
 /**
  * @brief Write message into wire.

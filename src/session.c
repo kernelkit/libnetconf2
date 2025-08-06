@@ -567,7 +567,7 @@ nc_session_get_version(const struct nc_session *session)
 {
     NC_CHECK_ARG_RET(session, session, -1);
 
-    return session->version == NC_VERSION_10 ? 0 : 1;
+    return session->version == NC_PROT_VERSION_10 ? 0 : 1;
 }
 
 API NC_TRANSPORT_IMPL

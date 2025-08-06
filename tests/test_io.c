@@ -64,7 +64,7 @@ setup_write(void **state)
     assert_return_code(pipe(pipes), errno);
 
     w->session->status = NC_STATUS_RUNNING;
-    w->session->version = NC_VERSION_10;
+    w->session->version = NC_PROT_VERSION_10;
     w->session->opts.client.msgid = 999;
     w->session->ti_type = NC_TI_FD;
     w->session->io_lock = malloc(sizeof *w->session->io_lock);
@@ -121,7 +121,7 @@ test_write_rpc_10(void **state)
 {
     struct wr *w = (struct wr *)*state;
 
-    w->session->version = NC_VERSION_10;
+    w->session->version = NC_PROT_VERSION_10;
 
     return test_write_rpc(state);
 }
@@ -131,7 +131,7 @@ test_write_rpc_11(void **state)
 {
     struct wr *w = (struct wr *)*state;
 
-    w->session->version = NC_VERSION_11;
+    w->session->version = NC_PROT_VERSION_11;
 
     return test_write_rpc(state);
 }
@@ -160,7 +160,7 @@ test_write_rpc_10_bad(void **state)
 {
     struct wr *w = (struct wr *)*state;
 
-    w->session->version = NC_VERSION_10;
+    w->session->version = NC_PROT_VERSION_10;
 
     return test_write_rpc_bad(state);
 }
@@ -170,7 +170,7 @@ test_write_rpc_11_bad(void **state)
 {
     struct wr *w = (struct wr *)*state;
 
-    w->session->version = NC_VERSION_11;
+    w->session->version = NC_PROT_VERSION_11;
 
     return test_write_rpc_bad(state);
 }

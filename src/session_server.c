@@ -1576,7 +1576,7 @@ nc_server_prepare_rpc_err(struct nc_session *session, struct lyd_node *envp)
     LY_ERR errcode;
 
     /* envelope was not parsed */
-    if (!envp && (session->version != NC_VERSION_11)) {
+    if (!envp && (session->version != NC_PROT_VERSION_11)) {
         return NULL;
     }
     ly_err = ly_err_last(session->ctx);
@@ -1656,8 +1656,10 @@ cleanup:
 static int
 nc_server_recv_rpc_io(struct nc_session *session, int io_timeout, struct nc_server_rpc **rpc)
 {
-    struct ly_in *msg;
+    struct ly_in *msg = NULL;
     struct nc_server_reply *reply = NULL;
+    char *buf = NULL;
+    uint32_t buf_len = 0;
     int r, ret = 0;
 
     NC_CHECK_ARG_RET(session, session, rpc, NC_PSPOLL_ERROR);
@@ -1670,7 +1672,7 @@ nc_server_recv_rpc_io(struct nc_session *session, int io_timeout, struct nc_serv
     *rpc = NULL;
 
     /* get a message */
-    r = nc_read_msg_io(session, io_timeout, &msg, 0);
+    r = nc_read_msg_io(session, io_timeout, 0, &buf, &buf_len);
     if (r == -2) {
         /* malformed message */
         reply = nc_server_reply_err(nc_err(session->ctx, NC_ERR_MALFORMED_MSG));
@@ -1680,6 +1682,12 @@ nc_server_recv_rpc_io(struct nc_session *session, int io_timeout, struct nc_serv
         return NC_PSPOLL_ERROR;
     } else if (!r) {
         return NC_PSPOLL_TIMEOUT;
+    }
+
+    /* create input */
+    if (ly_in_new_memory(buf, &msg)) {
+        free(buf);
+        return NC_PSPOLL_ERROR;
     }
 
     *rpc = calloc(1, sizeof **rpc);
@@ -2370,11 +2378,6 @@ nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_m
             return -1;
         }
 
-        if ((*username)[rr] == '\0') {
-            /* whole username read */
-            break;
-        }
-
         if (!r) {
             /* sleep */
             usleep(NC_TIMEOUT_STEP);
@@ -2385,6 +2388,11 @@ nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_m
                 return 0;
             }
         } else {
+            if ((*username)[rr] == '\0') {
+                /* whole username read */
+                break;
+            }
+
             rr += r;
         }
     }

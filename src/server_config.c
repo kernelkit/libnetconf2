@@ -132,7 +132,17 @@ is_tls(const struct lyd_node *node)
 
 #endif /* NC_ENABLED_SSH_TLS */
 
-/* gets the endpoint struct (and optionally bind) based on node's location in the YANG data tree */
+/**
+ * @brief Gets an endpoint based on the node's location in the YANG data tree.
+ *
+ * Parent nodes of the given node are searched until the "endpoint" parent is hit
+ * and the endpoint name is extracted from it.
+ *
+ * @param[in] node Node in the YANG data tree to search for the endpoint.
+ * @param[out] endpt Found endpoint.
+ * @param[out] bind Optional bind associated with the endpoint.
+ * @return 0 on success, 1 on error.
+ */
 static int
 nc_server_config_get_endpt(const struct lyd_node *node, struct nc_endpt **endpt, struct nc_bind **bind)
 {
@@ -226,7 +236,14 @@ nc_server_config_get_ch_endpt(const struct lyd_node *node, const struct nc_ch_cl
 
 #ifdef NC_ENABLED_SSH_TLS
 
-/* gets the ssh_opts struct based on node's location in the YANG data tree */
+/**
+ * @brief Gets the SSH options structure based on the node's location in the YANG data tree.
+ *
+ * @param[in] node Node in the YANG data tree to search the SSH options for.
+ * @param[in] ch_client Call Home client structure, can be NULL if the node is a part of the listen subtree.
+ * @param[out] opts Pointer to the SSH options structure to be filled.
+ * @return 0 on success, 1 on error.
+ */
 static int
 nc_server_config_get_ssh_opts(const struct lyd_node *node, const struct nc_ch_client *ch_client,
         struct nc_server_ssh_opts **opts)
@@ -503,22 +520,23 @@ equal_parent_name(const struct lyd_node *node, uint16_t parent_count, const char
 }
 
 int
-nc_server_config_realloc(const char *key_value, void **ptr, size_t size, uint16_t *count)
+nc_server_config_realloc(const char *key_value, void **ptr, size_t size, void *count)
 {
     int ret = 0;
     void *tmp;
     char **name;
+    uint32_t *cnt = count;
 
-    tmp = realloc(*ptr, (*count + 1) * size);
+    tmp = realloc(*ptr, (*cnt + 1) * size);
     NC_CHECK_ERRMEM_GOTO(!tmp, ret = 1, cleanup);
     *ptr = tmp;
 
     /* set the newly allocated memory to 0 */
-    memset((char *)(*ptr) + (*count * size), 0, size);
-    (*count)++;
+    memset((char *)(*ptr) + (*cnt * size), 0, size);
+    (*cnt)++;
 
     /* access the first member of the supposed structure */
-    name = (char **)((*ptr) + ((*count - 1) * size));
+    name = (char **)((*ptr) + ((*cnt - 1) * size));
 
     /* and set it's value */
     *name = strdup(key_value);
@@ -3584,10 +3602,21 @@ nc_server_config_max_attempts(const struct lyd_node *node, enum nc_operation op)
 
 static int
 nc_server_config_parse_netconf_server(const struct lyd_node *node, enum nc_operation op)
+
+/**
+ * @brief Route a YANG data node to its appropriate configuration handler based on its name.
+ *
+ * @param[in] node ietf-netconf-server YANG data node to process.
+ * @param[in] op Configuration operation to perform (create, replace, delete).
+ * @return 0 on success, 1 on error.
+ */
+static int
+nc_server_config_parse_netconf_server_node(const struct lyd_node *node, enum nc_operation op)
 {
     const char *name = LYD_NAME(node);
     int ret = 0;
 
+    /* not SSH/TLS dependent config nodes */
     if (!strcmp(name, "anchor-time")) {
         ret = nc_server_config_anchor_time(node, op);
     } else if (!strcmp(name, "call-home")) {
@@ -3616,6 +3645,7 @@ nc_server_config_parse_netconf_server(const struct lyd_node *node, enum nc_opera
         ret = nc_server_config_start_with(node, op);
     }
 #ifdef NC_ENABLED_SSH_TLS
+    /* SSH/TLS dependent config nodes */
     else if (!strcmp(name, "auth-timeout")) {
         ret = nc_server_config_auth_timeout(node, op);
     } else if (!strcmp(name, "asymmetric-key")) {
@@ -3910,7 +3940,7 @@ nc_server_config_ignored_module(const struct lyd_node *node, enum nc_operation o
 }
 
 static int
-nc_server_config_parse_libnetconf2_netconf_server(const struct lyd_node *node, enum nc_operation op)
+nc_server_config_parse_libnetconf2_netconf_server_node(const struct lyd_node *node, enum nc_operation op)
 {
     const char *name = LYD_NAME(node);
     int ret = 0;
@@ -3973,7 +4003,7 @@ nc_server_config_listen_all_endpoints(const struct lyd_node *node)
 }
 
 int
-nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation parent_op, NC_MODULE module)
+nc_server_config_process_tree(const struct lyd_node *node, enum nc_operation parent_op, NC_MODULE module)
 {
     struct lyd_node *child;
     struct lyd_meta *m;
@@ -4013,15 +4043,15 @@ nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation paren
     case NC_OP_REPLACE:
 #ifdef NC_ENABLED_SSH_TLS
         if (module == NC_MODULE_KEYSTORE) {
-            ret = nc_server_config_parse_keystore(node, current_op);
+            ret = nc_server_config_parse_keystore_node(node, current_op);
         } else if (module == NC_MODULE_TRUSTSTORE) {
-            ret = nc_server_config_parse_truststore(node, current_op);
+            ret = nc_server_config_parse_truststore_node(node, current_op);
         } else
 #endif /* NC_ENABLED_SSH_TLS */
         if (module == NC_MODULE_LIBNETCONF2_NETCONF_SERVER) {
-            ret = nc_server_config_parse_libnetconf2_netconf_server(node, current_op);
+            ret = nc_server_config_parse_libnetconf2_netconf_server_node(node, current_op);
         } else if (module == NC_MODULE_NETCONF_SERVER) {
-            ret = nc_server_config_parse_netconf_server(node, current_op);
+            ret = nc_server_config_parse_netconf_server_node(node, current_op);
         } else {
             ERRINT;
             ret = 1;
@@ -4036,7 +4066,7 @@ nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation paren
 
     if (current_op != NC_OP_DELETE) {
         LY_LIST_FOR(lyd_child(node), child) {
-            if (nc_server_config_parse_tree(child, current_op, module)) {
+            if (nc_server_config_process_tree(child, current_op, module)) {
                 return 1;
             }
         }
@@ -4158,7 +4188,7 @@ nc_server_config_fill_netconf_server(const struct lyd_node *data, enum nc_operat
         goto cleanup;
     }
 
-    if (nc_server_config_parse_tree(tree, op, NC_MODULE_NETCONF_SERVER)) {
+    if (nc_server_config_process_tree(tree, op, NC_MODULE_NETCONF_SERVER)) {
         ret = 1;
         goto cleanup;
     }
@@ -4194,7 +4224,7 @@ nc_server_config_fill_libnetconf2_netconf_server(const struct lyd_node *data, en
         goto cleanup;
     }
 
-    if (nc_server_config_parse_tree(tree, op, NC_MODULE_LIBNETCONF2_NETCONF_SERVER)) {
+    if (nc_server_config_process_tree(tree, op, NC_MODULE_LIBNETCONF2_NETCONF_SERVER)) {
         ret = 1;
         goto cleanup;
     }

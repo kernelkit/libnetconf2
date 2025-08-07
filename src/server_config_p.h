@@ -63,7 +63,7 @@ int equal_parent_name(const struct lyd_node *node, uint16_t parent_count, const 
  * @param[in,out] count Count of members in the array, incremented at the end.
  * @return 0 on success, 1 on error.
  */
-int nc_server_config_realloc(const char *key_value, void **ptr, size_t size, uint16_t *count);
+int nc_server_config_realloc(const char *key_value, void **ptr, size_t size, void *count);
 
 /**
  * @brief Recursively parse the given tree and apply it's data to the server's configuration.
@@ -73,7 +73,7 @@ int nc_server_config_realloc(const char *key_value, void **ptr, size_t size, uin
  * @param[in] module Module for which to parse the data - either ietf-netconf-server, ietf-keystore or ietf-truststore
  * @return 0 on success, 1 on error.
  */
-int nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation parent_op, NC_MODULE module);
+int nc_server_config_process_tree(const struct lyd_node *node, enum nc_operation parent_op, NC_MODULE module);
 
 /**
  * @brief Configures the listen subtree in the ietf-netconf-server module.
@@ -113,7 +113,7 @@ int nc_server_config_fill_keystore(const struct lyd_node *data, enum nc_operatio
  * @param[in] op Operation saying what to do with the node.
  * @return 0 on success, 1 on error.
  */
-int nc_server_config_parse_keystore(const struct lyd_node *node, enum nc_operation op);
+int nc_server_config_parse_keystore_node(const struct lyd_node *node, enum nc_operation op);
 
 /**
  * @brief Configures the keystore subtree in the ietf-keystore module.
@@ -142,7 +142,7 @@ int nc_server_config_fill_truststore(const struct lyd_node *data, enum nc_operat
  * @param[in] op Operation saying what to do with the node.
  * @return 0 on success, 1 on error.
  */
-int nc_server_config_parse_truststore(const struct lyd_node *node, enum nc_operation op);
+int nc_server_config_parse_truststore_node(const struct lyd_node *node, enum nc_operation op);
 
 /**
  * @brief Configures the truststore subtree in the ietf-truststore module.

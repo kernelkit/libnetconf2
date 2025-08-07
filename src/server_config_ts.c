@@ -538,7 +538,7 @@ nc_server_config_ts_public_key_format(const struct lyd_node *node, enum nc_opera
 }
 
 int
-nc_server_config_parse_truststore(const struct lyd_node *node, enum nc_operation op)
+nc_server_config_parse_truststore_node(const struct lyd_node *node, enum nc_operation op)
 {
     const char *name = LYD_NAME(node);
     int ret = 0;
@@ -588,7 +588,7 @@ nc_server_config_fill_truststore(const struct lyd_node *data, enum nc_operation 
         goto cleanup;
     }
 
-    if (nc_server_config_parse_tree(tree, op, NC_MODULE_TRUSTSTORE)) {
+    if (nc_server_config_process_tree(tree, op, NC_MODULE_TRUSTSTORE)) {
         ret = 1;
         goto cleanup;
     }

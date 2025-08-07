@@ -383,7 +383,7 @@ nc_server_config_ks_cert_data(const struct lyd_node *node, enum nc_operation op)
 }
 
 int
-nc_server_config_parse_keystore(const struct lyd_node *node, enum nc_operation op)
+nc_server_config_parse_keystore_node(const struct lyd_node *node, enum nc_operation op)
 {
     const char *name = LYD_NAME(node);
     int ret = 0;
@@ -433,7 +433,7 @@ nc_server_config_fill_keystore(const struct lyd_node *data, enum nc_operation op
         goto cleanup;
     }
 
-    if (nc_server_config_parse_tree(tree, op, NC_MODULE_KEYSTORE)) {
+    if (nc_server_config_process_tree(tree, op, NC_MODULE_KEYSTORE)) {
         ret = 1;
         goto cleanup;
     }

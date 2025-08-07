@@ -106,4 +106,14 @@ extern ATOMIC_T verbose_level;
 #define NC_CHECK_ARG_RET(session, ...) GETMACRO8(__VA_ARGS__, NC_CHECK_ARG_RET7, NC_CHECK_ARG_RET6, NC_CHECK_ARG_RET5,\
     NC_CHECK_ARG_RET4, NC_CHECK_ARG_RET3, NC_CHECK_ARG_RET2, NC_CHECK_ARG_RET1, DUMMY) (session, __VA_ARGS__)
 
+/*
+ * Common code to check return value and perform appropriate action.
+ */
+#define NC_CHECK_GOTO(COND, GOTO) if ((COND)) {goto GOTO;}
+#define NC_CHECK_ERR_GOTO(COND, ERR, GOTO) if ((COND)) {ERR; goto GOTO;}
+#define NC_CHECK_RET1(RETVAL) {int ret__ = RETVAL;if (ret__ != 0) {return ret__;}}
+#define NC_CHECK_RET2(COND, RETVAL) if ((COND)) {return RETVAL;}
+#define NC_CHECK_RET(...) GETMACRO2(__VA_ARGS__, NC_CHECK_RET2, NC_CHECK_RET1, DUMMY)(__VA_ARGS__)
+#define NC_CHECK_ERR_RET(COND, ERR, RETVAL) if ((COND)) {ERR; return RETVAL;}
+
 #endif /* NC_LOG_PRIVATE_H_ */

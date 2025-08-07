@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <pwd.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -232,6 +233,24 @@ nc_server_config_get_ch_endpt(const struct lyd_node *node, const struct nc_ch_cl
 
     ERR(NULL, "Call-home client's \"%s\" endpoint \"%s\" was not found.", ch_client->name, name);
     return 1;
+}
+
+/**
+ * @brief Gets the UNIX options structure based on the node's location in the YANG data tree.
+ *
+ * @param[in] node Node in the YANG data tree to search the UNIX options for.
+ * @param[out] opts Pointer to the UNIX options structure to be filled.
+ * @return 0 on success, 1 on error.
+ */
+static int
+nc_server_config_get_unix_opts(const struct lyd_node *node, struct nc_server_unix_opts **opts)
+{
+    struct nc_endpt *endpt;
+
+    NC_CHECK_RET(nc_server_config_get_endpt(node, &endpt, NULL));
+    *opts = endpt->opts.unix;
+
+    return 0;
 }
 
 #ifdef NC_ENABLED_SSH_TLS
@@ -852,6 +871,81 @@ nc_server_config_del_endpt_tls(struct nc_endpt *endpt, struct nc_bind *bind)
 #endif /* NC_ENABLED_SSH_TLS */
 
 static void
+nc_server_config_del_user_mapping(struct nc_server_unix_opts *opts, const uint32_t idx)
+{
+    uint32_t i;
+
+    assert(idx < opts->mapping_count);
+
+    /* free the mapping */
+    free(opts->user_mappings[idx].system_user);
+    opts->user_mappings[idx].system_user = NULL;
+
+    for (i = 0; i < opts->user_mappings[idx].allowed_user_count; ++i) {
+        free(opts->user_mappings[idx].allowed_users[i]);
+    }
+    free(opts->user_mappings[idx].allowed_users);
+    opts->user_mappings[idx].allowed_users = NULL;
+    opts->user_mappings[idx].allowed_user_count = 0;
+
+    if (idx != (opts->mapping_count - 1)) {
+        memcpy(&opts->user_mappings[idx], &opts->user_mappings[opts->mapping_count - 1],
+                sizeof *opts->user_mappings);
+    }
+    opts->mapping_count--;
+}
+
+static void
+nc_server_config_del_unix_opts(struct nc_bind *bind, struct nc_server_unix_opts *opts)
+{
+    uint32_t i;
+
+    if (bind) {
+        if (bind->sock > -1) {
+            close(bind->sock);
+        }
+        unlink(bind->address);
+        free(bind->address);
+    }
+
+    if (opts) {
+        /* free the path */
+        free(opts->path);
+        opts->path = NULL;
+
+        /* free the user mappings */
+        for (i = opts->mapping_count; i > 0; i--) {
+            nc_server_config_del_user_mapping(opts, i - 1);
+        }
+        free(opts->user_mappings);
+        opts->user_mappings = NULL;
+        opts->mapping_count = 0;
+
+        /* free the options structure */
+        free(opts);
+    }
+}
+
+static void
+nc_server_config_del_endpt_unix(struct nc_endpt *endpt, struct nc_bind *bind)
+{
+    free(endpt->name);
+
+    nc_server_config_del_unix_opts(bind, endpt->opts.unix);
+
+    server_opts.endpt_count--;
+    if (!server_opts.endpt_count) {
+        free(server_opts.endpts);
+        free(server_opts.binds);
+        server_opts.endpts = NULL;
+        server_opts.binds = NULL;
+    } else if (endpt != &server_opts.endpts[server_opts.endpt_count]) {
+        memcpy(endpt, &server_opts.endpts[server_opts.endpt_count], sizeof *server_opts.endpts);
+        memcpy(bind, &server_opts.binds[server_opts.endpt_count], sizeof *server_opts.binds);
+    }
+}
+
+static void
 nc_server_config_ch_del_endpt(struct nc_ch_client *ch_client, struct nc_ch_endpt *ch_endpt)
 {
     free(ch_endpt->name);
@@ -963,6 +1057,7 @@ nc_server_config_listen(const struct lyd_node *node, enum nc_operation op)
                 break;
 #endif /* NC_ENABLED_SSH_TLS */
             case NC_TI_UNIX:
+                nc_server_config_del_endpt_unix(&server_opts.endpts[i], &server_opts.binds[i]);
                 break;
             case NC_TI_NONE:
             case NC_TI_FD:
@@ -3601,7 +3696,232 @@ nc_server_config_max_attempts(const struct lyd_node *node, enum nc_operation op)
 }
 
 static int
-nc_server_config_parse_netconf_server(const struct lyd_node *node, enum nc_operation op)
+nc_server_config_netconf_user(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_server_unix_opts *opts;
+    struct lyd_node *n;
+    const char *system_user;
+    char ***allowed_users;
+    uint32_t *allowed_user_count;
+    uint32_t i, j;
+
+    NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
+
+    /* get the instance of the user mapping that we are going to modify */
+    lyd_find_path((const struct lyd_node *)node->parent, "system-user", 0, &n);
+    assert(n);
+    system_user = lyd_get_value(n);
+
+    for (i = 0; i < opts->mapping_count; ++i) {
+        if (!strcmp(opts->user_mappings[i].system_user, system_user)) {
+            break;
+        }
+    }
+    NC_CHECK_ERR_RET(i == opts->mapping_count,
+            ERR(NULL, "No user mapping for system-user \"%s\" found.", system_user), 1);
+
+    if (op == NC_OP_CREATE) {
+        /* create a new mapping */
+        allowed_users = &opts->user_mappings[i].allowed_users;
+        allowed_user_count = &opts->user_mappings[i].allowed_user_count;
+
+        *allowed_users = nc_realloc(*allowed_users, (*allowed_user_count + 1) * sizeof **allowed_users);
+        NC_CHECK_ERRMEM_RET(!*allowed_users, 1);
+
+        (*allowed_users)[*allowed_user_count] = strdup(lyd_get_value(node));
+        NC_CHECK_ERRMEM_RET(!(*allowed_users)[*allowed_user_count], 1);
+
+        (*allowed_user_count)++;
+    } else if (op == NC_OP_DELETE) {
+        /* find the user we want to delete */
+        for (j = 0; j < opts->user_mappings[i].allowed_user_count; j++) {
+            if (!strcmp(opts->user_mappings[i].allowed_users[j], lyd_get_value(node))) {
+                break;
+            }
+        }
+        NC_CHECK_ERR_RET(j == opts->user_mappings[i].allowed_user_count,
+                ERR(NULL, "No user \"%s\" found in mapping for system-user \"%s\".", lyd_get_value(node), system_user), 1);
+
+        /* delete the user */
+        free(opts->user_mappings[i].allowed_users[j]);
+        opts->user_mappings[i].allowed_users[j] = NULL;
+        opts->user_mappings[i].allowed_user_count--;
+    }
+
+    return 0;
+}
+
+static int
+nc_server_config_user_mapping(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_server_unix_opts *opts;
+    const char *system_user;
+    uint32_t i;
+
+    assert(lyd_child(node) && !strcmp(LYD_NAME(lyd_child(node)), "system-user"));
+
+    NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
+
+    /* list's key */
+    system_user = lyd_get_value(lyd_child(node));
+
+    if (op == NC_OP_CREATE) {
+        /* create a new mapping */
+        NC_CHECK_RET(nc_server_config_realloc(system_user, (void **)&opts->user_mappings,
+                sizeof *opts->user_mappings, &opts->mapping_count));
+    } else if (op == NC_OP_DELETE) {
+        /* find the mapping we want to delete */
+        for (i = 0; i < opts->mapping_count; ++i) {
+            if (!strcmp(opts->user_mappings[i].system_user, system_user)) {
+                break;
+            }
+        }
+        NC_CHECK_ERR_RET(i == opts->mapping_count,
+                ERR(NULL, "No user mapping for system-user \"%s\" found.", system_user), 1);
+        nc_server_config_del_user_mapping(opts, i);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Convert a username of a UNIX user to its UID.
+ *
+ * @param[in] username Username to convert.
+ * @param[out] uid Pointer to store the UID.
+ * @return 0 on success, 1 on error.
+ */
+static int
+nc_server_config_username2uid(const char *username, uid_t *uid)
+{
+    struct passwd *pw, pw_buf;
+    char *buf = NULL;
+    size_t buf_size = 0;
+
+    pw = nc_getpw(0, username, &pw_buf, &buf, &buf_size);
+    NC_CHECK_RET(!pw, 1);
+
+    *uid = pw->pw_uid;
+    free(buf);
+    return 0;
+}
+
+static int
+nc_server_config_group(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_server_unix_opts *opts;
+    const char *group;
+    gid_t gid;
+
+    NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
+
+    if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
+        group = lyd_get_value(node);
+        NC_CHECK_RET(nc_server_config_username2uid(group, &gid));
+        opts->gid = gid;
+    } else if (op == NC_OP_DELETE) {
+        /* reset to default */
+        opts->gid = (gid_t)-1;
+    }
+
+    return 0;
+}
+
+static int
+nc_server_config_owner(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_server_unix_opts *opts;
+    const char *owner;
+    uid_t uid;
+
+    NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
+
+    if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
+        owner = lyd_get_value(node);
+        NC_CHECK_RET(nc_server_config_username2uid(owner, &uid));
+        opts->uid = uid;
+    } else if (op == NC_OP_DELETE) {
+        /* reset to default */
+        opts->uid = (uid_t)-1;
+    }
+
+    return 0;
+}
+
+static int
+nc_server_config_mode(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_server_unix_opts *opts;
+    long mode;
+
+    NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
+
+    if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
+        mode = strtol(lyd_get_value(node), NULL, 8);
+        if ((mode < 0) || (mode > 0777)) {
+            ERR(NULL, "Invalid UNIX socket mode value \"%s\".", lyd_get_value(node));
+            return 1;
+        }
+        opts->mode = mode;
+    } else if (op == NC_OP_DELETE) {
+        /* reset to default */
+        opts->mode = (mode_t)-1;
+    }
+
+    return 0;
+}
+
+static int
+nc_server_config_path(const struct lyd_node *node, enum nc_operation op)
+{
+    struct nc_endpt *endpt;
+    struct nc_bind *bind;
+    struct nc_server_unix_opts *opts;
+
+    NC_CHECK_RET(nc_server_config_get_endpt(node, &endpt, &bind));
+    opts = endpt->opts.unix;
+
+    if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
+        free(opts->path);
+        opts->path = strdup(lyd_get_value(node));
+        NC_CHECK_ERRMEM_RET(!opts->path, 1);
+
+        free(bind->address);
+        bind->address = strdup(opts->path);
+        NC_CHECK_ERRMEM_RET(!bind->address, 1);
+    } else if (op == NC_OP_DELETE) {
+        free(opts->path);
+        opts->path = NULL;
+    }
+
+    return 0;
+}
+
+static int
+nc_server_config_unix(const struct lyd_node *node, enum nc_operation op)
+{
+    int ret = 0;
+    struct nc_endpt *endpt;
+    struct nc_bind *bind;
+
+    NC_CHECK_RET(nc_server_config_get_endpt(node, &endpt, &bind));
+
+    if (op == NC_OP_CREATE) {
+        endpt->ti = NC_TI_UNIX;
+        endpt->opts.unix = calloc(1, sizeof *endpt->opts.unix);
+        NC_CHECK_ERRMEM_RET(!endpt->opts.ssh, 1);
+
+        /* set non-zero default values */
+        endpt->opts.unix->uid = (uid_t)-1;
+        endpt->opts.unix->gid = (gid_t)-1;
+    } else if (op == NC_OP_DELETE) {
+        nc_server_config_del_unix_opts(bind, endpt->opts.unix);
+        endpt->opts.unix = NULL;
+        endpt->ti = NC_TI_NONE;
+    }
+
+    return ret;
+}
 
 /**
  * @brief Route a YANG data node to its appropriate configuration handler based on its name.
@@ -3623,6 +3943,8 @@ nc_server_config_parse_netconf_server_node(const struct lyd_node *node, enum nc_
         ret = nc_server_config_ch(node, op);
     } else if (!strcmp(name, "endpoint")) {
         ret = nc_server_config_endpoint(node, op);
+    } else if (!strcmp(name, "group")) {
+        ret = nc_server_config_group(node, op);
     } else if (!strcmp(name, "idle-timeout")) {
         ret = nc_server_config_idle_timeout(node, op);
     } else if (!strcmp(name, "listen")) {
@@ -3631,8 +3953,16 @@ nc_server_config_parse_netconf_server_node(const struct lyd_node *node, enum nc_
         ret = nc_server_config_max_attempts(node, op);
     } else if (!strcmp(name, "max-wait")) {
         ret = nc_server_config_max_wait(node, op);
+    } else if (!strcmp(name, "mode")) {
+        ret = nc_server_config_mode(node, op);
     } else if (!strcmp(name, "netconf-client")) {
         ret = nc_server_config_netconf_client(node, op);
+    } else if (!strcmp(name, "netconf-user")) {
+        ret = nc_server_config_netconf_user(node, op);
+    } else if (!strcmp(name, "owner")) {
+        ret = nc_server_config_owner(node, op);
+    } else if (!strcmp(name, "path")) {
+        ret = nc_server_config_path(node, op);
     } else if (!strcmp(name, "period")) {
         ret = nc_server_config_period(node, op);
     } else if (!strcmp(name, "periodic")) {
@@ -3643,6 +3973,10 @@ nc_server_config_parse_netconf_server_node(const struct lyd_node *node, enum nc_
         ret = nc_server_config_reconnect_strategy(node, op);
     } else if (!strcmp(name, "start-with")) {
         ret = nc_server_config_start_with(node, op);
+    } else if (!strcmp(name, "unix")) {
+        ret = nc_server_config_unix(node, op);
+    } else if (!strcmp(name, "user-mapping")) {
+        ret = nc_server_config_user_mapping(node, op);
     }
 #ifdef NC_ENABLED_SSH_TLS
     /* SSH/TLS dependent config nodes */

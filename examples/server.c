@@ -225,23 +225,30 @@ init(const char *unix_socket_path, struct ly_ctx **context, struct nc_pollsessio
         ERR_MSG_CLEANUP("Error loading modules required for configuration of the server.\n");
     }
 
-    /* apply the YANG data stored in config.json */
-    rc = nc_server_config_setup_path(*context, EXAMPLES_DIR "/config.json");
-    if (rc) {
-        ERR_MSG_CLEANUP("Application of configuration data failed.\n");
-    }
-
     /* initialize the server */
     if (nc_server_init()) {
         ERR_MSG_CLEANUP("Error occurred while initializing the server.\n");
     }
 
-    /* create unix socket endpoint if path was set */
+    /* load the example configuration data */
+    rc = lyd_parse_data_path(*context, EXAMPLES_DIR "/config.json", LYD_JSON, LYD_PARSE_ONLY, 0, &config);
+    if (rc) {
+        ERR_MSG_CLEANUP("Error while parsing the example configuration data.\n");
+    }
+
+    /* add UNIX socket to the configuration tree if the path was specified */
     if (unix_socket_path) {
-        rc = nc_server_add_endpt_unix_socket_listen("unix-socket-endpt", unix_socket_path, -1, -1, -1);
+        rc = nc_server_config_add_unix_socket(*context, "unix-socket-endpt",
+                unix_socket_path, NULL, NULL, NULL, &config);
         if (rc) {
-            ERR_MSG_CLEANUP("Creating UNIX socket endpoint failed.\n");
+            ERR_MSG_CLEANUP("Creating UNIX socket endpoint configuration failed.\n");
         }
+    }
+
+    /* apply the example configuration data to the server */
+    rc = nc_server_config_setup_data(config);
+    if (rc) {
+        ERR_MSG_CLEANUP("Applying the example configuration data failed.\n");
     }
 
     /* create a new poll session structure, which is used for polling RPCs sent by clients */

@@ -34,6 +34,7 @@ setup_f(void **state)
 {
     int ret;
     struct ln2_test_ctx *test_ctx;
+    struct lyd_node *config = NULL;
 
     ret = ln2_glob_test_setup(&test_ctx);
     assert_int_equal(ret, 0);
@@ -41,8 +42,14 @@ setup_f(void **state)
     *state = test_ctx;
 
     /* create the UNIX socket */
-    ret = nc_server_add_endpt_unix_socket_listen("unix", "/tmp/nc2_test_unix_sock", 0700, -1, -1);
+    ret = nc_server_config_add_unix_socket(test_ctx->ctx,
+            "unix", "/tmp/nc2_test_unix_sock", NULL, NULL, NULL, &config);
     assert_int_equal(ret, 0);
+
+    ret = nc_server_config_setup_data(config);
+    assert_int_equal(ret, 0);
+
+    lyd_free_all(config);
 
     return 0;
 }

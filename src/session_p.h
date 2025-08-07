@@ -393,10 +393,18 @@ struct nc_keepalives {
  * @brief UNIX socket connection configuration.
  */
 struct nc_server_unix_opts {
-    char *address;  /**< Address of the socket. */
-    mode_t mode;    /**< Socket's mode. */
-    uid_t uid;      /**< Socket's uid. */
-    gid_t gid;      /**< Socket's gid. */
+    char *path;                         /**< Filesystem path to the UNIX socket. */
+
+    mode_t mode;                        /**< Socket file permissions (defaults to rw-rw----). */
+    uid_t uid;                          /**< Owner of the socket file. */
+    gid_t gid;                          /**< Group owner of the socket file. */
+
+    struct {
+        char *system_user;              /**< System username for authentication. */
+        char **allowed_users;           /**< Permitted NETCONF usernames. */
+        uint32_t allowed_user_count;    /**< Number of allowed usernames. */
+    } *user_mappings;                   /**< Array of username mappings for the UNIX socket connection. */
+    uint32_t mapping_count;             /**< Number of user mapping entries. */
 };
 
 /**
@@ -643,7 +651,7 @@ struct nc_server_opts {
             struct nc_server_ssh_opts *ssh;         /**< SSH transport options. */
             struct nc_server_tls_opts *tls;         /**< TLS transport options. */
 #endif /* NC_ENABLED_SSH_TLS */
-            struct nc_server_unix_opts *unixsock;   /**< UNIX socket transport options. */
+            struct nc_server_unix_opts *unix;       /**< UNIX socket transport options. */
         } opts;
     } *endpts;                          /**< Array of server's endpoints. */
     uint16_t endpt_count;               /**< Number of server's endpoints. */

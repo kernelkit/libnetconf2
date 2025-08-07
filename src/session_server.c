@@ -372,8 +372,8 @@ nc_sock_listen_unix(const struct nc_server_unix_opts *opts)
     struct sockaddr_un sun;
     int sock = -1;
 
-    if (strlen(opts->address) > sizeof(sun.sun_path) - 1) {
-        ERR(NULL, "Socket path \"%s\" is longer than maximum length %d.", opts->address, (int)(sizeof(sun.sun_path) - 1));
+    if (strlen(opts->path) > sizeof(sun.sun_path) - 1) {
+        ERR(NULL, "Socket path \"%s\" is longer than maximum length %d.", opts->path, (int)(sizeof(sun.sun_path) - 1));
         goto fail;
     }
 
@@ -385,11 +385,11 @@ nc_sock_listen_unix(const struct nc_server_unix_opts *opts)
 
     memset(&sun, 0, sizeof(sun));
     sun.sun_family = AF_UNIX;
-    snprintf(sun.sun_path, sizeof(sun.sun_path) - 1, "%s", opts->address);
+    snprintf(sun.sun_path, sizeof(sun.sun_path) - 1, "%s", opts->path);
 
     unlink(sun.sun_path);
     if (bind(sock, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
-        ERR(NULL, "Could not bind \"%s\" (%s).", opts->address, strerror(errno));
+        ERR(NULL, "Could not bind \"%s\" (%s).", opts->path, strerror(errno));
         goto fail;
     }
 
@@ -408,7 +408,7 @@ nc_sock_listen_unix(const struct nc_server_unix_opts *opts)
     }
 
     if (listen(sock, NC_REVERSE_QUEUE) == -1) {
-        ERR(NULL, "Unable to start listening on \"%s\" (%s).", opts->address, strerror(errno));
+        ERR(NULL, "Unable to start listening on \"%s\" (%s).", opts->path, strerror(errno));
         goto fail;
     }
 
@@ -902,7 +902,7 @@ error:
 API void
 nc_server_destroy(void)
 {
-    uint32_t i, endpt_count;
+    uint32_t i;
 
     for (i = 0; i < server_opts.capabilities_count; i++) {
         free(server_opts.capabilities[i]);
@@ -922,13 +922,6 @@ nc_server_destroy(void)
 
     nc_server_config_listen(NULL, NC_OP_DELETE);
     nc_server_config_ch(NULL, NC_OP_DELETE);
-
-    endpt_count = server_opts.endpt_count;
-    for (i = 0; i < endpt_count; i++) {
-        if (server_opts.endpts[i].ti == NC_TI_UNIX) {
-            _nc_server_del_endpt_unix_socket(&server_opts.endpts[i], &server_opts.binds[i]);
-        }
-    }
 
     pthread_mutex_destroy(&server_opts.bind_lock);
 
@@ -2280,7 +2273,7 @@ nc_server_set_address_port(struct nc_endpt *endpt, struct nc_bind *bind, const c
     if ((address && port) || (endpt->ti == NC_TI_UNIX)) {
         /* create new socket, close the old one */
         if (endpt->ti == NC_TI_UNIX) {
-            sock = nc_sock_listen_unix(endpt->opts.unixsock);
+            sock = nc_sock_listen_unix(endpt->opts.unix);
         } else {
             sock = nc_sock_listen_inet(address, port);
         }
@@ -2299,7 +2292,7 @@ nc_server_set_address_port(struct nc_endpt *endpt, struct nc_bind *bind, const c
     if (sock > -1) {
         switch (endpt->ti) {
         case NC_TI_UNIX:
-            VRB(NULL, "Listening on %s for UNIX connections.", endpt->opts.unixsock->address);
+            VRB(NULL, "Listening on %s for UNIX connections.", endpt->opts.unix->path);
             break;
 #ifdef NC_ENABLED_SSH_TLS
         case NC_TI_SSH:
@@ -2389,6 +2382,58 @@ nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_m
 }
 
 /**
+ * @brief Validate the requested username against the configured mappings.
+ *
+ * @param[in] session NETCONF session.
+ * @param[in] effective_uname Effective system username of the connected peer.
+ * @param[in] requested_uname Requested NETCONF username.
+ * @return 0 if the requested username can be used, 1 otherwise.
+ */
+static int
+nc_accept_unix_validate_requested_username(struct nc_session *session,
+        const char *effective_uname, const char *requested_uname)
+{
+    int allow_any = 0;
+    struct nc_server_unix_opts *opts = session->data;
+    uint32_t i, j;
+
+    /* try to find a mapping entry for this system user */
+    for (i = 0; i < opts->mapping_count; i++) {
+        if (!strcmp(opts->user_mappings[i].system_user, effective_uname)) {
+            break;
+        }
+    }
+    if (i == opts->mapping_count) {
+        /* matching entry not found, the user can only authenticate if its
+         * requested username is the same as the effective one */
+        if (strcmp(effective_uname, requested_uname)) {
+            /* fail */
+            return 1;
+        }
+    } else {
+        /* found a mapping entry, check if the requested username is allowed for this system user */
+        for (j = 0; j < opts->user_mappings[i].allowed_user_count; j++) {
+            if (!strcmp(opts->user_mappings[i].allowed_users[j], requested_uname)) {
+                /* match */
+                break;
+            } else if (!strcmp(opts->user_mappings[i].allowed_users[j], "*")) {
+                /* special case, the user can authenticate as any username */
+                allow_any = 1;
+                break;
+            }
+        }
+
+        if (!allow_any && (j == opts->user_mappings[i].allowed_user_count)) {
+            /* fail */
+            return 1;
+        }
+    }
+
+    /* the user can use the requested username */
+    return 0;
+}
+
+/**
  * @brief Fully accept a session on a connected UNIX socket.
  *
  * @param[in] session Session to use.
@@ -2400,7 +2445,7 @@ static int
 nc_accept_unix_session(struct nc_session *session, int sock)
 {
     struct passwd *pw, pw_buf;
-    char *username, *buf = NULL;
+    char *requested_username = NULL, *buf = NULL;
     const char *pwname;
     uid_t uid = 0;
     size_t buf_len = 0;
@@ -2420,20 +2465,25 @@ nc_accept_unix_session(struct nc_session *session, int sock)
     pwname = pw->pw_name;
 
     /* read the NETCONF username */
-    if (nc_accept_unix_read_username(session, sock, NC_TRANSPORT_TIMEOUT, &username) != 1) {
+    if (nc_accept_unix_read_username(session, sock, NC_TRANSPORT_TIMEOUT, &requested_username) != 1) {
         goto error;
     }
 
-    /* authenticate */
-    if (strcmp(pwname, username)) {
-        ERR(session, "UNIX system user \"%s\" tried to authenticate as invalid user \"%s\", disconnecting.", pwname, username);
-        free(username);
+    NC_CHECK_ERR_GOTO(!requested_username || !*requested_username,
+            ERR(session, "Empty username requested by a UNIX client \"%s\", "
+            "but a valid NETCONF username is required, disconnecting.", pwname), error);
+
+    /* validate the requested username against configured mappings, if its ok the user can directly use it */
+    if (nc_accept_unix_validate_requested_username(session, pwname, requested_username)) {
+        ERR(session, "UNIX system user \"%s\" tried to authenticate as invalid user \"%s\", disconnecting.",
+                pwname, requested_username);
         goto error;
     }
-    VRB(session, "User \"%s\" authenticated (UNIX socket system user \"%s\").", username, pwname);
+
+    VRB(session, "User \"%s\" authenticated (UNIX socket system user \"%s\").", requested_username, pwname);
 
     /* fill session */
-    session->username = username;
+    session->username = requested_username;
     session->ti_type = NC_TI_UNIX;
     session->ti.unixsock.sock = sock;
 
@@ -2442,144 +2492,9 @@ nc_accept_unix_session(struct nc_session *session, int sock)
 
 error:
     close(sock);
+    free(requested_username);
     free(buf);
     return -1;
-}
-
-API int
-nc_server_add_endpt_unix_socket_listen(const char *endpt_name, const char *unix_socket_path, mode_t mode, uid_t uid, gid_t gid)
-{
-    int ret = 0;
-    void *tmp;
-    uint16_t i;
-
-    NC_CHECK_ARG_RET(NULL, endpt_name, unix_socket_path, 1);
-
-    /* CONFIG LOCK */
-    pthread_rwlock_wrlock(&server_opts.config_lock);
-
-    /* check name uniqueness */
-    for (i = 0; i < server_opts.endpt_count; i++) {
-        if (!strcmp(endpt_name, server_opts.endpts[i].name)) {
-            ERR(NULL, "Endpoint \"%s\" already exists.", endpt_name);
-            ret = 1;
-            goto cleanup;
-        }
-    }
-
-    /* alloc a new endpoint */
-    tmp = nc_realloc(server_opts.endpts, (server_opts.endpt_count + 1) * sizeof *server_opts.endpts);
-    NC_CHECK_ERRMEM_GOTO(!tmp, ret = 1, cleanup);
-    server_opts.endpts = tmp;
-    memset(&server_opts.endpts[server_opts.endpt_count], 0, sizeof *server_opts.endpts);
-
-    /* alloc a new bind */
-    tmp = nc_realloc(server_opts.binds, (server_opts.endpt_count + 1) * sizeof *server_opts.binds);
-    NC_CHECK_ERRMEM_GOTO(!tmp, ret = 1, cleanup);
-    server_opts.binds = tmp;
-    memset(&server_opts.binds[server_opts.endpt_count], 0, sizeof *server_opts.binds);
-    server_opts.binds[server_opts.endpt_count].sock = -1;
-    server_opts.endpt_count++;
-
-    /* set name and ti */
-    server_opts.endpts[server_opts.endpt_count - 1].name = strdup(endpt_name);
-    NC_CHECK_ERRMEM_GOTO(!server_opts.endpts[server_opts.endpt_count - 1].name, ret = 1, cleanup);
-    server_opts.endpts[server_opts.endpt_count - 1].ti = NC_TI_UNIX;
-
-    /* set the bind data */
-    server_opts.binds[server_opts.endpt_count - 1].address = strdup(unix_socket_path);
-    NC_CHECK_ERRMEM_GOTO(!server_opts.binds[server_opts.endpt_count - 1].address, ret = 1, cleanup);
-
-    /* alloc unix opts */
-    server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock = calloc(1, sizeof(struct nc_server_unix_opts));
-    NC_CHECK_ERRMEM_GOTO(!server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock, ret = 1, cleanup);
-
-    /* set the opts data */
-    server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock->address = strdup(unix_socket_path);
-    NC_CHECK_ERRMEM_GOTO(!server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock->address, ret = 1, cleanup);
-    server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock->mode = (mode == (mode_t) -1) ? (mode_t) -1 : mode;
-    server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock->uid = (uid == (uid_t) -1) ? (uid_t) -1 : uid;
-    server_opts.endpts[server_opts.endpt_count - 1].opts.unixsock->gid = (gid == (gid_t) -1) ? (gid_t) -1 : gid;
-
-    /* start listening */
-    ret = nc_server_set_address_port(&server_opts.endpts[server_opts.endpt_count - 1],
-            &server_opts.binds[server_opts.endpt_count - 1], NULL, 0);
-    if (ret) {
-        ERR(NULL, "Listening on UNIX socket \"%s\" failed.", unix_socket_path);
-        goto cleanup;
-    }
-
-cleanup:
-    /* CONFIG UNLOCK */
-    pthread_rwlock_unlock(&server_opts.config_lock);
-    return ret;
-}
-
-static void
-nc_server_del_endpt_unix_socket_opts(struct nc_bind *bind, struct nc_server_unix_opts *opts)
-{
-    if (bind->sock > -1) {
-        close(bind->sock);
-    }
-
-    unlink(bind->address);
-    free(bind->address);
-    free(opts->address);
-
-    free(opts);
-}
-
-void
-_nc_server_del_endpt_unix_socket(struct nc_endpt *endpt, struct nc_bind *bind)
-{
-    free(endpt->name);
-    nc_server_del_endpt_unix_socket_opts(bind, endpt->opts.unixsock);
-
-    server_opts.endpt_count--;
-    if (!server_opts.endpt_count) {
-        free(server_opts.endpts);
-        free(server_opts.binds);
-        server_opts.endpts = NULL;
-        server_opts.binds = NULL;
-    } else if (endpt != &server_opts.endpts[server_opts.endpt_count]) {
-        memcpy(endpt, &server_opts.endpts[server_opts.endpt_count], sizeof *server_opts.endpts);
-        memcpy(bind, &server_opts.binds[server_opts.endpt_count], sizeof *server_opts.binds);
-    }
-}
-
-API void
-nc_server_del_endpt_unix_socket(const char *endpt_name)
-{
-    uint16_t i;
-    struct nc_endpt *endpt = NULL;
-    struct nc_bind *bind;
-
-    NC_CHECK_ARG_RET(NULL, endpt_name, );
-
-    /* CONFIG LOCK */
-    pthread_rwlock_wrlock(&server_opts.config_lock);
-
-    for (i = 0; i < server_opts.endpt_count; i++) {
-        if (!strcmp(server_opts.endpts[i].name, endpt_name)) {
-            endpt = &server_opts.endpts[i];
-            bind = &server_opts.binds[i];
-            break;
-        }
-    }
-    if (!endpt) {
-        ERR(NULL, "Endpoint \"%s\" not found.", endpt_name);
-        goto end;
-    }
-    if (endpt->ti != NC_TI_UNIX) {
-        ERR(NULL, "Endpoint \"%s\" is not a UNIX socket endpoint.", endpt_name);
-        goto end;
-    }
-
-    _nc_server_del_endpt_unix_socket(endpt, bind);
-
-end:
-    /* CONFIG UNLOCK */
-    pthread_rwlock_unlock(&server_opts.config_lock);
 }
 
 API int
@@ -2663,7 +2578,7 @@ nc_accept(int timeout, const struct ly_ctx *ctx, struct nc_session **session)
     } else
 #endif /* NC_ENABLED_SSH_TLS */
     if (server_opts.endpts[bind_idx].ti == NC_TI_UNIX) {
-        (*session)->data = server_opts.endpts[bind_idx].opts.unixsock;
+        (*session)->data = server_opts.endpts[bind_idx].opts.unix;
         ret = nc_accept_unix_session(*session, sock);
         sock = -1;
         if (ret < 0) {

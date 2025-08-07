@@ -31,6 +31,10 @@ module libnetconf2-netconf-server {
     prefix tlss;
   }
 
+  revision "2025-08-01" {
+    description "Added UNIX socket configuration.";
+  }
+
   revision "2025-06-02" {
     description "Removed presence from the <keyboard-interactive> container.";
   }
@@ -425,6 +429,90 @@ module libnetconf2-netconf-server {
   augment "/ncs:netconf-server/ncs:call-home/ncs:netconf-client/ncs:endpoints" +
           "/ncs:endpoint/ncs:transport/ncs:tls/ncs:tls/ncs:tls-server-parameters/ncs:client-authentication" {
     uses endpoint-reference-grouping;
+  }
+
+  augment "/ncs:netconf-server/ncs:listen/ncs:endpoints/ncs:endpoint/ncs:transport" {
+    case unix {
+      container unix {
+        description
+          "UNIX socket configuration to listen for NETCONF over UNIX socket connections.
+
+           The server will create a UNIX domain socket at the specified path
+           and listen for incoming NETCONF connections. Client authentication
+           is based on the connecting process's effective user ID.";
+
+        leaf path {
+          type string {
+            length "1..107";
+          }
+          mandatory true;
+          description
+            "Filesystem path where the UNIX socket will be created.
+             The parent directory
+             must exist and be writable by the NETCONF server process.
+
+             Example: /var/run/netconf.sock";
+        }
+
+        container socket-permissions {
+          description
+            "File system permissions for the created socket.
+             These settings control which processes can connect to the socket.";
+
+          leaf mode {
+            type string {
+              pattern "0?[0-7]{3}";
+            }
+            default "0660"; // default to rw-rw----
+            description
+              "Socket file permissions in octal format, e.g., 777 means
+               read, write and execute permissions for everyone.";
+          }
+
+          leaf owner {
+            type string; // typedef username?
+            description
+              "Owner (UNIX user) of the socket file. If not specified,
+               the socket inherits the owner of the server process.";
+          }
+
+          leaf group {
+            type string;
+            description
+              "Group owner (UNIX user) of the socket file. If not specified,
+               the socket inherits the group of the server process.";
+          }
+        }
+
+        container client-authentication {
+          description
+            "UNIX socket client authentication options, which provide mapping of UNIX users to NETCONF users.";
+
+          list user-mappings {
+            description
+              "List of mappings of UNIX users to explicit allowed NETCONF users they can authenticate as. If a user connects
+               that has no matching entry in this list, it can only authenticate with a NETCONF username equal to
+               the UNIX username.";
+
+            key "system-user";
+
+            leaf system-user {
+              type string;
+              description
+                "UNIX system username of the connecting process.";
+            }
+
+            leaf-list netconf-user {
+              type string;
+              description
+                "Allowed NETCONF username for the UNIX system user. Special '*' value enables the system user to
+                 authenticate as any NETCONF user. In case there are no instances of this list, the system user
+                 cannot authenticate as any NETCONF user.";
+            }
+          }
+        }
+      }
+    }
   }
 
   // Protocol-accessible Nodes

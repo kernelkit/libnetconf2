@@ -1,10 +1,11 @@
 /**
  * @file server_config_util.c
  * @author Roman Janota <janota@cesnet.cz>
+ * @author Michal Vasko <mvasko@cesnet.cz>
  * @brief libnetconf2 server configuration utilities
  *
  * @copyright
- * Copyright (c) 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2023 - 2025 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -201,6 +202,88 @@ cleanup:
     free(path);
     va_end(ap);
     return ret;
+}
+
+API int
+nc_server_config_add_unix_socket(const struct ly_ctx *ctx, const char *endpt_name, const char *path,
+        const char *mode, const char *owner, const char *group, struct lyd_node **config)
+{
+    int rc = 0;
+    char *path_fmt = NULL;
+
+    NC_CHECK_ARG_RET(NULL, ctx, path, config, 1);
+
+    /* create the path to the socket's path */
+    NC_CHECK_ERR_RET(asprintf(&path_fmt, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
+            "libnetconf2-netconf-server:unix/path", endpt_name) == -1, ERRMEM, 1);
+    NC_CHECK_GOTO(rc = nc_server_config_create(ctx, config, path, path_fmt), cleanup);
+
+    if (!mode && !owner && !group) {
+        /* nothing more to do */
+        goto cleanup;
+    }
+
+    /* create the path to socket's mode/owner/group */
+    free(path_fmt);
+    NC_CHECK_ERR_RET(asprintf(&path_fmt, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
+            "libnetconf2-netconf-server:unix/socket-permissions", endpt_name) == -1, ERRMEM, 1);
+
+    if (mode) {
+        /* set the mode */
+        NC_CHECK_GOTO(rc = nc_server_config_append(ctx, path_fmt, "mode", mode, config), cleanup);
+    }
+    if (owner) {
+        /* set the owner */
+        NC_CHECK_GOTO(rc = nc_server_config_append(ctx, path_fmt, "owner", owner, config), cleanup);
+    }
+    if (group) {
+        /* set the group */
+        NC_CHECK_GOTO(rc = nc_server_config_append(ctx, path_fmt, "group", group, config), cleanup);
+    }
+
+cleanup:
+    free(path_fmt);
+    return rc;
+}
+
+API int
+nc_server_config_add_unix_user_mapping(const struct ly_ctx *ctx, const char *endpt_name,
+        const char *system_user, const char *netconf_user, struct lyd_node **config)
+{
+    int rc = 0;
+    char *path_fmt = NULL;
+
+    NC_CHECK_ARG_RET(NULL, endpt_name, system_user, config, 1);
+
+    NC_CHECK_ERR_RET(asprintf(&path_fmt, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
+            "libnetconf2-netconf-server:unix/client-authentication/user-mappings[system-user='%s']",
+            endpt_name, system_user) == -1, ERRMEM, 1);
+
+    if (netconf_user) {
+        NC_CHECK_GOTO(rc = nc_server_config_create(ctx, config, netconf_user, path_fmt), cleanup);
+    } else {
+        NC_CHECK_GOTO(rc = nc_server_config_create(ctx, config, NULL, path_fmt), cleanup);
+    }
+
+cleanup:
+    free(path_fmt);
+    return rc;
+}
+
+API int
+nc_server_config_del_unix_user_mapping(const char *endpt_name, const char *system_user, struct lyd_node **config)
+{
+    NC_CHECK_ARG_RET(NULL, config, 1);
+
+    if (system_user) {
+        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
+                "libnetconf2-netconf-server:unix/client-authentication/user-mappings[system-user='%s']",
+                endpt_name, system_user);
+    } else {
+        /* delete all instances */
+        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
+                "libnetconf2-netconf-server:unix/client-authentication/user-mappings", endpt_name);
+    }
 }
 
 #ifdef NC_ENABLED_SSH_TLS

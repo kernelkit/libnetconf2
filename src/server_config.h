@@ -136,6 +136,70 @@ int nc_server_config_add_address_port(const struct ly_ctx *ctx, const char *endp
  */
 int nc_server_config_del_endpt(const char *endpt_name, struct lyd_node **config);
 
+/**
+ * @brief Creates new YANG data nodes for a UNIX socket endpoint.
+ *
+ * @param[in] ctx libyang context.
+ * @param[in] endpt_name Arbitrary identifier of the endpoint.
+ * If an endpoint with this identifier already exists, its contents might be changed.
+ * @param[in] path Path to the UNIX socket. The parent directory must be writable by the server process.
+ * @param[in] mode Optional UNIX socket file mode in octal format (e.g., "0777").
+ * If NULL, the default value ("0660") will be used.
+ * @param[in] owner Optional owner of the UNIX socket file.
+ * If NULL, the owner will be set to the user running the server process.
+ * @param[in] group Optional group of the UNIX socket file.
+ * If NULL, the group will be set to the group of the user running the server process.
+ * @param[in,out] config Configuration YANG data tree. If *config is NULL, it will be created.
+ * Otherwise the new YANG data will be added to the previous data and may override it.
+ * @return 0 on success, non-zero otherwise.
+ *
+ */
+int nc_server_config_add_unix_socket(const struct ly_ctx *ctx, const char *endpt_name, const char *path,
+        const char *mode, const char *owner, const char *group, struct lyd_node **config);
+
+/**
+ * @brief Creates new YANG data nodes for a UNIX username mapping.
+ *
+ * Specifies who can connect to a UNIX socket endpoint. There are 3 following scenarios:
+ *
+ * 1)  If no mappings are configured for the client @p system_user, then the client can
+ * only connect if its username matches @p netconf_user.
+ *
+ * 2) If a mapping for the client @p system_user is configured, but no @p netconf_user s
+ * are specified, then the client cannot connect as any username.
+ *
+ * 3) If a mapping for the client @p system_user is configured, and at least one @p netconf_user
+ * is specified, then the client can connect only with one of the specified usernames.
+ * If a wildcard value "*" is configured for @p netconf_user, then the client can connect
+ * with any NETCONF username.
+ *
+ * @param[in] ctx libyang context.
+ * @param[in] endpt_name Arbitrary identifier of the endpoint.
+ * If an endpoint with this identifier already exists, its contents might be changed.
+ * @param[in] system_user System user name, who the mapping will be created for.
+ * @param[in] netconf_user Username that the @p system_user can use to connect to the endpoint.
+ * Special value "*" can be used to allow any username.
+ * If NULL, empty mapping will be created, which means that the @p system_user
+ * can not connect to the endpoint with any username.
+ * @param[in,out] config Configuration YANG data tree. If *config is NULL, it will be created.
+ * Otherwise the new YANG data will be added to the previous data and may override it.
+ * @return 0 on success, non-zero otherwise.
+ */
+int nc_server_config_add_unix_user_mapping(const struct ly_ctx *ctx, const char *endpt_name,
+        const char *system_user, const char *netconf_user, struct lyd_node **config);
+
+/**
+ * @brief Deletes a UNIX username mapping from the YANG data.
+ *
+ * @param[in] endpt_name Identifier of an existing endpoint.
+ * @param[in] system_user Optional identifier of a system user whose mapping will be deleted.
+ * If NULL, all of the mappings for the endpoint will be deleted.
+ * @param[in,out] config Configuration YANG data tree.
+ * @return 0 on success, non-zero otherwise.
+ */
+int nc_server_config_del_unix_user_mapping(const char *endpt_name, const char *system_user,
+        struct lyd_node **config);
+
 #ifdef NC_ENABLED_SSH_TLS
 
 /**

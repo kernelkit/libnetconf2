@@ -1292,11 +1292,6 @@ nc_server_config_local_address(const struct lyd_node *node, enum nc_operation op
         free(bind->address);
         bind->address = strdup(lyd_get_value(node));
         NC_CHECK_ERRMEM_GOTO(!bind->address, ret = 1, cleanup);
-
-        ret = nc_server_set_address_port(endpt, bind, lyd_get_value(node), 0);
-        if (ret) {
-            goto cleanup;
-        }
     } else if (is_ch(node) && equal_parent_name(node, 1, "tcp-client-parameters")) {
         if ((ret = nc_server_config_get_ch_client(node, &ch_client))) {
             goto cleanup;
@@ -1344,11 +1339,6 @@ nc_server_config_local_port(const struct lyd_node *node, enum nc_operation op)
         } else {
             /* delete -> set to default */
             bind->port = 0;
-        }
-
-        ret = nc_server_set_address_port(endpt, bind, NULL, bind->port);
-        if (ret) {
-            goto cleanup;
         }
     } else if (is_ch(node) && equal_parent_name(node, 1, "tcp-client-parameters")) {
         if ((ret = nc_server_config_get_ch_client(node, &ch_client))) {
@@ -3945,6 +3935,43 @@ nc_server_config_parse_libnetconf2_netconf_server(const struct lyd_node *node, e
     return 0;
 }
 
+/**
+ * @brief Listen on all endpoints defined in the new netconf-server configuration.
+ *
+ * This function is called after all netconf-server configuration nodes are processed.
+ *
+ * @param[in] node The `netconf-server` configuration node.
+ * @return 0 on success, 1 on error.
+ */
+static int
+nc_server_config_listen_all_endpoints(const struct lyd_node *node)
+{
+    int r = 0;
+    struct lyd_node *n, *iter;
+    struct nc_endpt *endpt;
+    struct nc_bind *bind;
+
+    NC_CHECK_ERR_RET(strcmp(LYD_NAME(node), "netconf-server"),
+            ERR(NULL, "Unexpected node \"%s\" encountered, expected \"netconf-server\".", LYD_NAME(node)), 1);
+
+    /* find the listen endpoints */
+    r = lyd_find_path(node, "listen/endpoints", 0, &n);
+    NC_CHECK_RET(r && (r != LY_ENOTFOUND), 1);
+
+    if (n) {
+        /* go over all the endpoints */
+        LY_LIST_FOR(lyd_child(n), iter) {
+            /* get the endpoint and bind structs from the node */
+            NC_CHECK_RET(nc_server_config_get_endpt(iter, &endpt, &bind));
+
+            /* listen on the endpoint */
+            NC_CHECK_RET(nc_server_set_address_port(endpt, bind, bind->address, bind->port));
+        }
+    }
+
+    return 0;
+}
+
 int
 nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation parent_op, NC_MODULE module)
 {
@@ -4014,6 +4041,13 @@ nc_server_config_parse_tree(const struct lyd_node *node, enum nc_operation paren
             }
         }
     }
+
+    if (!strcmp(LYD_NAME(node), "netconf-server")) {
+        /* all of the nodes within the netconf-server module are processed,
+         * we can now start listening on all new endpoints */
+        NC_CHECK_RET(nc_server_config_listen_all_endpoints(node));
+    }
+
     return 0;
 }
 

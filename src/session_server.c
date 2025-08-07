@@ -2272,21 +2272,9 @@ nc_ps_clear(struct nc_pollsession *ps, int all, void (*data_free)(void *))
 int
 nc_server_set_address_port(struct nc_endpt *endpt, struct nc_bind *bind, const char *address, uint16_t port)
 {
-    int sock = -1, set_addr, ret = 0;
+    int sock = -1, ret = 0;
 
-    assert((address && !port) || (!address && port) || (endpt->ti == NC_TI_UNIX));
-
-    if (address) {
-        set_addr = 1;
-    } else {
-        set_addr = 0;
-    }
-
-    if (set_addr) {
-        port = bind->port;
-    } else {
-        address = bind->address;
-    }
+    assert(address && (port || (endpt->ti == NC_TI_UNIX)));
 
     /* we have all the information we need to create a listening socket */
     if ((address && port) || (endpt->ti == NC_TI_UNIX)) {

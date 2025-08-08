@@ -256,7 +256,7 @@ nc_server_config_add_unix_user_mapping(const struct ly_ctx *ctx, const char *end
     NC_CHECK_ARG_RET(NULL, endpt_name, system_user, config, 1);
 
     NC_CHECK_ERR_RET(asprintf(&path_fmt, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
-            "libnetconf2-netconf-server:unix/client-authentication/user-mappings[system-user='%s']",
+            "libnetconf2-netconf-server:unix/client-authentication/user-mapping[system-user='%s']/netconf-user",
             endpt_name, system_user) == -1, ERRMEM, 1);
 
     if (netconf_user) {
@@ -277,12 +277,12 @@ nc_server_config_del_unix_user_mapping(const char *endpt_name, const char *syste
 
     if (system_user) {
         return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
-                "libnetconf2-netconf-server:unix/client-authentication/user-mappings[system-user='%s']",
+                "libnetconf2-netconf-server:unix/client-authentication/user-mapping[system-user='%s']",
                 endpt_name, system_user);
     } else {
         /* delete all instances */
         return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']/"
-                "libnetconf2-netconf-server:unix/client-authentication/user-mappings", endpt_name);
+                "libnetconf2-netconf-server:unix/client-authentication/user-mapping", endpt_name);
     }
 }
 

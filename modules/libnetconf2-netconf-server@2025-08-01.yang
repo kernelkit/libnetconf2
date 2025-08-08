@@ -463,36 +463,36 @@ module libnetconf2-netconf-server {
             type string {
               pattern "0?[0-7]{3}";
             }
-            default "0660"; // default to rw-rw----
+            default "0660"; // defaults to rw-rw----
             description
               "Socket file permissions in octal format, e.g., 777 means
                read, write and execute permissions for everyone.";
           }
 
           leaf owner {
-            type string; // typedef username?
+            type string;
             description
-              "Owner (UNIX user) of the socket file. If not specified,
+              "Owner (system user) of the socket file. If not specified,
                the socket inherits the owner of the server process.";
           }
 
           leaf group {
             type string;
             description
-              "Group owner (UNIX user) of the socket file. If not specified,
+              "Group owner (system group) of the socket file. If not specified,
                the socket inherits the group of the server process.";
           }
         }
 
         container client-authentication {
           description
-            "UNIX socket client authentication options, which provide mapping of UNIX users to NETCONF users.";
+            "UNIX socket client authentication options, which provide mapping of system users to NETCONF users.";
 
-          list user-mappings {
+          list user-mapping {
             description
-              "List of mappings of UNIX users to explicit allowed NETCONF users they can authenticate as. If a user connects
-               that has no matching entry in this list, it can only authenticate with a NETCONF username equal to
-               the UNIX username.";
+              "List of mappings of system users to explicit allowed NETCONF users they can authenticate as. If a user
+               connects that has no matching entry in this list, it can only authenticate with a NETCONF username equal
+               to the system username.";
 
             key "system-user";
 
@@ -506,7 +506,7 @@ module libnetconf2-netconf-server {
               type string;
               description
                 "Allowed NETCONF username for the UNIX system user. Special '*' value enables the system user to
-                 authenticate as any NETCONF user. In case there are no instances of this list, the system user
+                 authenticate as any NETCONF user. In case there are no instances of this leaf-list, the system user
                  cannot authenticate as any NETCONF user.";
             }
           }

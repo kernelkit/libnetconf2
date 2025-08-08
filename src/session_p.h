@@ -22,6 +22,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 #include <libyang/libyang.h>
 
@@ -969,7 +970,29 @@ int nc_server_set_address_port(struct nc_endpt *endpt, struct nc_bind *bind, con
  */
 void _nc_server_del_endpt_unix_socket(struct nc_endpt *endpt, struct nc_bind *bind);
 
+/**
+ * @brief Get passwd entry for UID or a user.
+ *
+ * @param[in] uid UID to use, if @p username is NULL.
+ * @param[in] username User name to use, if not NULL.
+ * @param[in] pwd_buf passwd buffer.
+ * @param[in,out] buf String buffer.
+ * @param[in,out] buf_size Size of @p buf.
+ * @return Found passwd entry, NULL on error.
+ */
 struct passwd *nc_getpw(uid_t uid, const char *username, struct passwd *pwd_buf, char **buf, size_t *buf_size);
+
+/**
+ * @brief Get group entry for GID or a group name.
+ *
+ * @param[in] gid GID to use, if @p grpname is NULL.
+ * @param[in] grpname Group name to use, if not NULL.
+ * @param[in] grp_buf group buffer.
+ * @param[in,out] buf String buffer.
+ * @param[in,out] buf_size Size of @p buf.
+ * @return Found group entry, NULL on error.
+ */
+struct group *nc_getgr(gid_t gid, const char *grpname, struct group *grp_buf, char **buf, size_t *buf_size);
 
 NC_MSG_TYPE nc_send_msg_io(struct nc_session *session, int io_timeout, struct lyd_node *op);
 

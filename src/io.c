@@ -5,7 +5,7 @@
  * @brief libnetconf2 - input/output functions
  *
  * @copyright
- * Copyright (c) 2015 - 2024 CESNET, z.s.p.o.
+ * Copyright (c) 2015 - 2025 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <grp.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <pwd.h>
@@ -1089,12 +1090,54 @@ nc_getpw(uid_t uid, const char *username, struct passwd *pwd_buf, char **buf, si
         }
     } while (ret && (ret == ERANGE));
 
-    if (ret) {
+    if (ret || !pwd) {
         if (username) {
-            ERR(NULL, "Retrieving username \"%s\" passwd entry failed (%s).", username, strerror(ret));
+            ERR(NULL, "Retrieving username \"%s\" passwd entry failed (%s).", username,
+                    ret ? strerror(ret) : "user not found");
         } else {
-            ERR(NULL, "Retrieving UID \"%lu\" passwd entry failed (%s).", (unsigned long)uid, strerror(ret));
+            ERR(NULL, "Retrieving UID \"%lu\" passwd entry failed (%s).", (unsigned long)uid,
+                    ret ? strerror(ret) : "uid not found");
         }
     }
     return pwd;
+}
+
+struct group *
+nc_getgr(gid_t gid, const char *grpname, struct group *grp_buf, char **buf, size_t *buf_size)
+{
+    struct group *grp = NULL;
+    long sys_size;
+    int ret;
+
+    do {
+        if (!*buf_size) {
+            /* learn suitable buffer size */
+            sys_size = sysconf(_SC_GETGR_R_SIZE_MAX);
+            *buf_size = (sys_size == -1) ? 2048 : sys_size;
+        } else {
+            /* enlarge buffer */
+            *buf_size += 2048;
+        }
+
+        /* allocate some buffer */
+        *buf = nc_realloc(*buf, *buf_size);
+        NC_CHECK_ERRMEM_RET(!*buf, NULL);
+
+        if (grpname) {
+            ret = getgrnam_r(grpname, grp_buf, *buf, *buf_size, &grp);
+        } else {
+            ret = getgrgid_r(gid, grp_buf, *buf, *buf_size, &grp);
+        }
+    } while (ret && (ret == ERANGE));
+
+    if (ret || !grp) {
+        if (grpname) {
+            ERR(NULL, "Retrieving group \"%s\" group entry failed (%s).", grpname,
+                    ret ? strerror(ret) : "group not found");
+        } else {
+            ERR(NULL, "Retrieving GID \"%lu\" group entry failed (%s).", (unsigned long)gid,
+                    ret ? strerror(ret) : "gid not found");
+        }
+    }
+    return grp;
 }

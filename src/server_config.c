@@ -17,11 +17,13 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <grp.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <libyang/libyang.h>
@@ -3785,68 +3787,54 @@ nc_server_config_user_mapping(const struct lyd_node *node, enum nc_operation op)
     return 0;
 }
 
-/**
- * @brief Convert a username of a UNIX user to its UID.
- *
- * @param[in] username Username to convert.
- * @param[out] uid Pointer to store the UID.
- * @return 0 on success, 1 on error.
- */
-static int
-nc_server_config_username2uid(const char *username, uid_t *uid)
-{
-    struct passwd *pw, pw_buf;
-    char *buf = NULL;
-    size_t buf_size = 0;
-
-    pw = nc_getpw(0, username, &pw_buf, &buf, &buf_size);
-    NC_CHECK_RET(!pw, 1);
-
-    *uid = pw->pw_uid;
-    free(buf);
-    return 0;
-}
-
 static int
 nc_server_config_group(const struct lyd_node *node, enum nc_operation op)
 {
+    int rc = 0;
     struct nc_server_unix_opts *opts;
-    const char *group;
-    gid_t gid;
+    struct group *gr, gr_buf;
+    char *buf = NULL;
+    size_t buf_size = 0;
 
     NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
 
     if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
-        group = lyd_get_value(node);
-        NC_CHECK_RET(nc_server_config_username2uid(group, &gid));
-        opts->gid = gid;
+        gr = nc_getgr(0, lyd_get_value(node), &gr_buf, &buf, &buf_size);
+        NC_CHECK_ERR_GOTO(!gr, rc = 1, cleanup);
+        opts->gid = gr->gr_gid;
     } else if (op == NC_OP_DELETE) {
         /* reset to default */
         opts->gid = (gid_t)-1;
     }
 
-    return 0;
+cleanup:
+    free(buf);
+    return rc;
 }
 
 static int
 nc_server_config_owner(const struct lyd_node *node, enum nc_operation op)
 {
+    int rc = 0;
     struct nc_server_unix_opts *opts;
-    const char *owner;
-    uid_t uid;
+    struct passwd *pw, pw_buf;
+    char *buf = NULL;
+    size_t buf_size = 0;
 
     NC_CHECK_RET(nc_server_config_get_unix_opts(node, &opts));
 
     if ((op == NC_OP_CREATE) || (op == NC_OP_REPLACE)) {
-        owner = lyd_get_value(node);
-        NC_CHECK_RET(nc_server_config_username2uid(owner, &uid));
-        opts->uid = uid;
+        pw = nc_getpw(0, lyd_get_value(node), &pw_buf, &buf, &buf_size);
+        NC_CHECK_ERR_GOTO(!pw, rc = 1, cleanup);
+        opts->uid = pw->pw_uid;
     } else if (op == NC_OP_DELETE) {
         /* reset to default */
         opts->uid = (uid_t)-1;
     }
 
-    return 0;
+cleanup:
+    free(buf);
+    return rc;
 }
 
 static int

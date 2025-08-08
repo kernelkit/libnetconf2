@@ -372,7 +372,10 @@ nc_sock_listen_unix(const struct nc_server_unix_opts *opts)
     struct sockaddr_un sun;
     int sock = -1;
 
-    if (strlen(opts->path) > sizeof(sun.sun_path) - 1) {
+    if (!opts->path) {
+        ERR(NULL, "No socket path set.");
+        goto fail;
+    } else if (strlen(opts->path) > sizeof(sun.sun_path) - 1) {
         ERR(NULL, "Socket path \"%s\" is longer than maximum length %d.", opts->path, (int)(sizeof(sun.sun_path) - 1));
         goto fail;
     }

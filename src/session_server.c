@@ -4072,7 +4072,9 @@ cleanup:
     if (targ->clb_free_data) {
         targ->clb_free_data(targ->clb_data);
     }
-    nc_server_notif_cert_exp_dates_destroy(exp_dates, exp_date_count);
+    if (exp_dates) {
+        nc_server_notif_cert_exp_dates_destroy(exp_dates, exp_date_count);
+    }
     free(targ);
     return NULL;
 }

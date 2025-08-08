@@ -2631,6 +2631,7 @@ nc_server_config_endpoint_reference(const struct lyd_node *node, enum nc_operati
             endpt->referenced_endpt_name = NULL;
         } else {
             /* call home */
+            assert(ch_endpt);
             free(ch_endpt->referenced_endpt_name);
             ch_endpt->referenced_endpt_name = NULL;
         }
@@ -2658,6 +2659,7 @@ nc_server_config_endpoint_reference(const struct lyd_node *node, enum nc_operati
             endpt->referenced_endpt_name = strdup(lyd_get_value(node));
             NC_CHECK_ERRMEM_GOTO(!endpt->referenced_endpt_name, ret = 1, cleanup);
         } else {
+            assert(ch_endpt);
             free(ch_endpt->referenced_endpt_name);
             ch_endpt->referenced_endpt_name = strdup(lyd_get_value(node));
             NC_CHECK_ERRMEM_GOTO(!ch_endpt->referenced_endpt_name, ret = 1, cleanup);

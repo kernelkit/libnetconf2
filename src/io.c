@@ -649,14 +649,14 @@ nc_write_starttag_and_msg(struct nc_session *session, const void *buf, uint32_t 
         r = sprintf(chunksize, "\n#%" PRIu32 "\n", count);
 
         r = nc_write(session, chunksize, r);
-        if (r == -1) {
+        if (r < 0) {
             return -1;
         }
         ret += r;
     }
 
     r = nc_write(session, buf, count);
-    if (r == -1) {
+    if (r < 0) {
         return -1;
     }
     ret += r;

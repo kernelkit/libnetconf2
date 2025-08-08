@@ -871,7 +871,7 @@ nc_server_config_del_endpt_tls(struct nc_endpt *endpt, struct nc_bind *bind)
 #endif /* NC_ENABLED_SSH_TLS */
 
 static void
-nc_server_config_del_user_mapping(struct nc_server_unix_opts *opts, const uint32_t idx)
+nc_server_config_del_user_mapping(struct nc_server_unix_opts *opts, uint32_t idx)
 {
     uint32_t i;
 
@@ -889,8 +889,8 @@ nc_server_config_del_user_mapping(struct nc_server_unix_opts *opts, const uint32
     opts->user_mappings[idx].allowed_user_count = 0;
 
     if (idx != (opts->mapping_count - 1)) {
-        memcpy(&opts->user_mappings[idx], &opts->user_mappings[opts->mapping_count - 1],
-                sizeof *opts->user_mappings);
+        /* replace the removed item with the last one */
+        opts->user_mappings[idx] = opts->user_mappings[opts->mapping_count - 1];
     }
     opts->mapping_count--;
 }
@@ -911,15 +911,12 @@ nc_server_config_del_unix_opts(struct nc_bind *bind, struct nc_server_unix_opts 
     if (opts) {
         /* free the path */
         free(opts->path);
-        opts->path = NULL;
 
         /* free the user mappings */
         for (i = opts->mapping_count; i > 0; i--) {
             nc_server_config_del_user_mapping(opts, i - 1);
         }
         free(opts->user_mappings);
-        opts->user_mappings = NULL;
-        opts->mapping_count = 0;
 
         /* free the options structure */
         free(opts);
@@ -940,8 +937,8 @@ nc_server_config_del_endpt_unix(struct nc_endpt *endpt, struct nc_bind *bind)
         server_opts.endpts = NULL;
         server_opts.binds = NULL;
     } else if (endpt != &server_opts.endpts[server_opts.endpt_count]) {
-        memcpy(endpt, &server_opts.endpts[server_opts.endpt_count], sizeof *server_opts.endpts);
-        memcpy(bind, &server_opts.binds[server_opts.endpt_count], sizeof *server_opts.binds);
+        *endpt = server_opts.endpts[server_opts.endpt_count];
+        *bind = server_opts.binds[server_opts.endpt_count];
     }
 }
 
@@ -3699,6 +3696,7 @@ static int
 nc_server_config_netconf_user(const struct lyd_node *node, enum nc_operation op)
 {
     struct nc_server_unix_opts *opts;
+    struct nc_server_unix_user_mapping *user_map;
     struct lyd_node *n;
     const char *system_user;
     char ***allowed_users;
@@ -3712,18 +3710,19 @@ nc_server_config_netconf_user(const struct lyd_node *node, enum nc_operation op)
     assert(n);
     system_user = lyd_get_value(n);
 
+    user_map = NULL;
     for (i = 0; i < opts->mapping_count; ++i) {
         if (!strcmp(opts->user_mappings[i].system_user, system_user)) {
+            user_map = &opts->user_mappings[i];
             break;
         }
     }
-    NC_CHECK_ERR_RET(i == opts->mapping_count,
-            ERR(NULL, "No user mapping for system-user \"%s\" found.", system_user), 1);
+    NC_CHECK_ERR_RET(!user_map, ERR(NULL, "No user mapping for system-user \"%s\" found.", system_user), 1);
 
     if (op == NC_OP_CREATE) {
         /* create a new mapping */
-        allowed_users = &opts->user_mappings[i].allowed_users;
-        allowed_user_count = &opts->user_mappings[i].allowed_user_count;
+        allowed_users = &user_map->allowed_users;
+        allowed_user_count = &user_map->allowed_user_count;
 
         *allowed_users = nc_realloc(*allowed_users, (*allowed_user_count + 1) * sizeof **allowed_users);
         NC_CHECK_ERRMEM_RET(!*allowed_users, 1);
@@ -3734,18 +3733,20 @@ nc_server_config_netconf_user(const struct lyd_node *node, enum nc_operation op)
         (*allowed_user_count)++;
     } else if (op == NC_OP_DELETE) {
         /* find the user we want to delete */
-        for (j = 0; j < opts->user_mappings[i].allowed_user_count; j++) {
-            if (!strcmp(opts->user_mappings[i].allowed_users[j], lyd_get_value(node))) {
+        for (j = 0; j < user_map->allowed_user_count; j++) {
+            if (!strcmp(user_map->allowed_users[j], lyd_get_value(node))) {
                 break;
             }
         }
-        NC_CHECK_ERR_RET(j == opts->user_mappings[i].allowed_user_count,
+        NC_CHECK_ERR_RET(j == user_map->allowed_user_count,
                 ERR(NULL, "No user \"%s\" found in mapping for system-user \"%s\".", lyd_get_value(node), system_user), 1);
 
         /* delete the user */
-        free(opts->user_mappings[i].allowed_users[j]);
-        opts->user_mappings[i].allowed_users[j] = NULL;
-        opts->user_mappings[i].allowed_user_count--;
+        free(user_map->allowed_users[j]);
+        user_map->allowed_user_count--;
+        if (j < user_map->allowed_user_count) {
+            user_map->allowed_users[j] = user_map->allowed_users[user_map->allowed_user_count];
+        }
     }
 
     return 0;

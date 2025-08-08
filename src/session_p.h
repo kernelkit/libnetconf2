@@ -400,7 +400,7 @@ struct nc_server_unix_opts {
     uid_t uid;                          /**< Owner of the socket file. */
     gid_t gid;                          /**< Group owner of the socket file. */
 
-    struct {
+    struct nc_server_unix_user_mapping {
         char *system_user;              /**< System username for authentication. */
         char **allowed_users;           /**< Permitted NETCONF usernames. */
         uint32_t allowed_user_count;    /**< Number of allowed usernames. */

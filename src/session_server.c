@@ -2382,7 +2382,7 @@ nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_m
 }
 
 /**
- * @brief Validate the requested username against the configured mappings.
+ * @brief Authenticate the requested username against the configured mappings.
  *
  * @param[in] session NETCONF session.
  * @param[in] effective_uname Effective system username of the connected peer.
@@ -2390,10 +2390,10 @@ nc_accept_unix_read_username(struct nc_session *session, int sock, int timeout_m
  * @return 0 if the requested username can be used, 1 otherwise.
  */
 static int
-nc_accept_unix_validate_requested_username(struct nc_session *session,
-        const char *effective_uname, const char *requested_uname)
+nc_accept_unix_auth_username(struct nc_session *session, const char *effective_uname,
+        const char *requested_uname)
 {
-    int allow_any = 0;
+    int match = 0;
     struct nc_server_unix_opts *opts = session->data;
     uint32_t i, j;
 
@@ -2413,17 +2413,18 @@ nc_accept_unix_validate_requested_username(struct nc_session *session,
     } else {
         /* found a mapping entry, check if the requested username is allowed for this system user */
         for (j = 0; j < opts->user_mappings[i].allowed_user_count; j++) {
-            if (!strcmp(opts->user_mappings[i].allowed_users[j], requested_uname)) {
-                /* match */
-                break;
-            } else if (!strcmp(opts->user_mappings[i].allowed_users[j], "*")) {
+            if (!strcmp(opts->user_mappings[i].allowed_users[j], "*")) {
                 /* special case, the user can authenticate as any username */
-                allow_any = 1;
+                match = 1;
+                break;
+            } else if (!strcmp(opts->user_mappings[i].allowed_users[j], requested_uname)) {
+                /* match */
+                match = 1;
                 break;
             }
         }
 
-        if (!allow_any && (j == opts->user_mappings[i].allowed_user_count)) {
+        if (!match) {
             /* fail */
             return 1;
         }
@@ -2473,8 +2474,8 @@ nc_accept_unix_session(struct nc_session *session, int sock)
             ERR(session, "Empty username requested by a UNIX client \"%s\", "
             "but a valid NETCONF username is required, disconnecting.", pwname), error);
 
-    /* validate the requested username against configured mappings, if its ok the user can directly use it */
-    if (nc_accept_unix_validate_requested_username(session, pwname, requested_username)) {
+    /* authenticate the requested username against configured mappings, if its ok the user can directly use it */
+    if (nc_accept_unix_auth_username(session, pwname, requested_username)) {
         ERR(session, "UNIX system user \"%s\" tried to authenticate as invalid user \"%s\", disconnecting.",
                 pwname, requested_username);
         goto error;

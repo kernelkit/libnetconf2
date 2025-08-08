@@ -240,7 +240,8 @@ nc_client_set_thread_context(void *context)
  * @brief Ext data callback for a context to provide schema mount data.
  */
 static LY_ERR
-nc_ly_ext_data_clb(const struct lysc_ext_instance *ext, void *user_data, void **ext_data, ly_bool *ext_data_free)
+nc_ly_ext_data_clb(const struct lysc_ext_instance *ext, const struct lyd_node *UNUSED(parent), void *user_data,
+        void **ext_data, ly_bool *ext_data_free)
 {
     struct nc_session *session = user_data;
 
@@ -515,7 +516,6 @@ retrieve_module_data_getschema(const char *name, const char *rev, struct clb_dat
         lyd_print_mem(&model_data, get_schema_data->value.tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
         break;
     case LYD_ANYDATA_JSON:
-    case LYD_ANYDATA_LYB:
         ERRINT;
         break;
     }
@@ -2314,7 +2314,7 @@ recv_reply(struct nc_session *session, int timeout, struct lyd_node *op, uint64_
 
     /* parse */
     prev_lo = ly_temp_log_options(&temp_lo);
-    lyrc = lyd_parse_op(NULL, op, msg, LYD_XML, LYD_TYPE_REPLY_NETCONF, envp, NULL);
+    lyrc = lyd_parse_op(NULL, op, msg, LYD_XML, LYD_TYPE_REPLY_NETCONF, LYD_PARSE_STRICT, envp, NULL);
     ly_temp_log_options(prev_lo);
 
     if (*envp) {
@@ -2364,7 +2364,7 @@ recv_reply_dup_rpc(struct nc_session *session, struct nc_rpc *rpc, struct lyd_no
             }
         } else {
             ly_in_new_memory(rpc_gen->content.xml_str, &in);
-            lyrc = lyd_parse_op(session->ctx, NULL, in, LYD_XML, LYD_TYPE_RPC_YANG, &tree, &op2);
+            lyrc = lyd_parse_op(session->ctx, NULL, in, LYD_XML, LYD_TYPE_RPC_YANG, LYD_PARSE_STRICT, &tree, &op2);
             ly_in_free(in, 0);
             if (lyrc) {
                 lyd_free_tree(tree);
@@ -2545,7 +2545,7 @@ recv_notif(struct nc_session *session, int timeout, struct lyd_node **envp, stru
     }
 
     /* Parse */
-    lyrc = lyd_parse_op(session->ctx, NULL, msg, LYD_XML, LYD_TYPE_NOTIF_NETCONF, envp, op);
+    lyrc = lyd_parse_op(session->ctx, NULL, msg, LYD_XML, LYD_TYPE_NOTIF_NETCONF, LYD_PARSE_STRICT, envp, op);
     if (!lyrc) {
         goto cleanup;
     } else {
@@ -2822,7 +2822,7 @@ nc_send_rpc(struct nc_session *session, struct nc_rpc *rpc, int timeout, uint64_
             dofree = 0;
         } else {
             ly_in_new_memory(rpc_gen->content.xml_str, &in);
-            lyrc = lyd_parse_op(session->ctx, NULL, in, LYD_XML, LYD_TYPE_RPC_YANG, &data, NULL);
+            lyrc = lyd_parse_op(session->ctx, NULL, in, LYD_XML, LYD_TYPE_RPC_YANG, LYD_PARSE_STRICT, &data, NULL);
             ly_in_free(in, 0);
             if (lyrc) {
                 break;

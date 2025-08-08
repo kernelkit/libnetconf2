@@ -1690,7 +1690,8 @@ nc_server_recv_rpc_io(struct nc_session *session, int io_timeout, struct nc_serv
     NC_CHECK_ERRMEM_GOTO(!*rpc, ret = NC_PSPOLL_ERROR, cleanup);
 
     /* parse the RPC */
-    if (!lyd_parse_op(session->ctx, NULL, msg, LYD_XML, LYD_TYPE_RPC_NETCONF, &(*rpc)->envp, &(*rpc)->rpc)) {
+    if (!lyd_parse_op(session->ctx, NULL, msg, LYD_XML, LYD_TYPE_RPC_NETCONF, LYD_PARSE_STRICT, &(*rpc)->envp,
+            &(*rpc)->rpc)) {
         /* check message-id */
         if (recv_rpc_check_msgid(session, (*rpc)->envp) == NC_MSG_RPC) {
             /* valid RPC */

@@ -720,7 +720,7 @@ read_msg:
             ly_in_free(msg, 1);
             goto read_msg;
         }
-        if (lyd_parse_op(session->ctx, close_rpc, msg, LYD_XML, LYD_TYPE_REPLY_NETCONF, &envp, NULL)) {
+        if (lyd_parse_op(session->ctx, close_rpc, msg, LYD_XML, LYD_TYPE_REPLY_NETCONF, LYD_PARSE_STRICT, &envp, NULL)) {
             WRN(session, "Failed to parse <close-session> reply.");
         } else if (!lyd_child(envp) || strcmp(LYD_NAME(lyd_child(envp)), "ok")) {
             WRN(session, "Reply to <close-session> was not <ok> as expected.");
@@ -1116,9 +1116,9 @@ nc_server_get_cpblts_version(const struct ly_ctx *ctx, LYS_VERSION version)
 {
     char **cpblts;
     const struct lys_module *mod;
-    struct lysp_feature *feat;
+    const char *feat;
     int size = 10, count, features_count = 0, dev_count = 0, str_len, len;
-    uint32_t i, u;
+    uint32_t u;
     LY_ARRAY_COUNT_TYPE v;
     char *yl_content_id;
     uint32_t wd_also_supported;
@@ -1259,40 +1259,35 @@ nc_server_get_cpblts_version(const struct ly_ctx *ctx, LYS_VERSION version)
             }
             free(yl_content_id);
             continue;
-        } else if ((version == LYS_VERSION_1_0) && (mod->parsed->version > version)) {
-            /* skip YANG 1.1 modules */
-            continue;
-        } else if ((version == LYS_VERSION_1_1) && (mod->parsed->version != version)) {
-            /* skip YANG 1.0 modules */
+        } else if (mod->version != version) {
+            /* skip YANG 1.0 or 1.1 modules */
             continue;
         }
 
         str_len = sprintf(str, "%s?module=%s%s%s", mod->ns, mod->name, mod->revision ? "&revision=" : "",
                 mod->revision ? mod->revision : "");
 
-        features_count = 0;
-        i = 0;
-        feat = NULL;
-        while ((feat = lysp_feature_next(feat, mod->parsed, &i))) {
-            if (!(feat->flags & LYS_FENABLED)) {
-                continue;
+        if (mod->compiled) {
+            features_count = 0;
+            LY_ARRAY_FOR(mod->compiled->features, v) {
+                feat = mod->compiled->features[v];
+                if (!features_count) {
+                    strcat(str, "&features=");
+                    str_len += 10;
+                }
+                len = strlen(feat);
+                if (str_len + 1 + len >= NC_CPBLT_BUF_LEN) {
+                    ERRINT;
+                    break;
+                }
+                if (features_count) {
+                    strcat(str, ",");
+                    ++str_len;
+                }
+                strcat(str, feat);
+                str_len += len;
+                features_count++;
             }
-            if (!features_count) {
-                strcat(str, "&features=");
-                str_len += 10;
-            }
-            len = strlen(feat->name);
-            if (str_len + 1 + len >= NC_CPBLT_BUF_LEN) {
-                ERRINT;
-                break;
-            }
-            if (features_count) {
-                strcat(str, ",");
-                ++str_len;
-            }
-            strcat(str, feat->name);
-            str_len += len;
-            features_count++;
         }
 
         if (mod->deviated_by) {

@@ -84,7 +84,7 @@ server_thread(void *arg)
             "</n1>\n";
 
     nc_assert(ly_in_new_memory(data, &in) == LY_SUCCESS);
-    nc_assert(lyd_parse_op(args.ctx, NULL, in, LYD_XML, LYD_TYPE_NOTIF_YANG, &ntf, NULL) == LY_SUCCESS);
+    nc_assert(lyd_parse_op(args.ctx, NULL, in, LYD_XML, LYD_TYPE_NOTIF_YANG, LYD_PARSE_STRICT, &ntf, NULL) == LY_SUCCESS);
     ly_in_free(in, 0);
 
     nc_assert(clock_gettime(CLOCK_REALTIME, &ts) != -1);

@@ -418,7 +418,7 @@ retrieve_module_data_localfile(const char *name, const char *rev, struct clb_dat
     if (!model_data) {
         ERRMEM;
     } else if ((l = fread(model_data, 1, length, f)) != length) {
-        ERR(clb_data->session, "Reading module from \"%s\" failed (%d bytes read, but %d expected).", localfile, l,
+        ERR(clb_data->session, "Reading module from \"%s\" failed (%ld bytes read, but %ld expected).", localfile, l,
                 length);
         free(model_data);
         model_data = NULL;

@@ -568,7 +568,7 @@ nc_write(struct nc_session *session, const void *buf, uint32_t count)
         return -1;
     }
 
-    DBG(session, "Sending message:\n%.*s\n", (int)count, buf);
+    DBG(session, "Sending message:\n%.*s\n", (int)count, (char *)buf);
 
     do {
         interrupted = 0;

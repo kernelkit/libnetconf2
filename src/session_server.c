@@ -656,10 +656,18 @@ nc_clb_default_get_schema(struct lyd_node *rpc, struct nc_session *session)
     const char *identifier = NULL, *revision = NULL, *format = NULL;
     char *model_data = NULL;
     struct ly_out *out;
-    const struct lys_module *module = NULL, *mod;
+    const struct lys_module *module = NULL, *nm_mod;
     const struct lysp_submodule *submodule = NULL;
     struct lyd_node *child, *err, *data = NULL;
     LYS_OUTFORMAT outformat = 0;
+    LY_ERR lyrc;
+
+    nm_mod = ly_ctx_get_module_implemented(session->ctx, "ietf-netconf-monitoring");
+    if (!nm_mod) {
+        err = nc_err(session->ctx, NC_ERR_OP_FAILED, NC_ERR_TYPE_APP);
+        nc_err_set_msg(err, "Module \"ietf-netconf-monitoring\" not found in the session context.", "en");
+        goto error;
+    }
 
     LY_LIST_FOR(lyd_child(rpc), child) {
         if (!strcmp(child->schema->name, "identifier")) {
@@ -679,7 +687,7 @@ nc_clb_default_get_schema(struct lyd_node *rpc, struct nc_session *session)
     if (revision && (strlen(revision) != 10) && strcmp(revision, "1.0")) {
         err = nc_err(session->ctx, NC_ERR_INVALID_VALUE, NC_ERR_TYPE_APP);
         nc_err_set_msg(err, "The requested version is not supported.", "en");
-        return nc_server_reply_err(err);
+        goto error;
     }
 
     if (revision) {
@@ -701,7 +709,7 @@ nc_clb_default_get_schema(struct lyd_node *rpc, struct nc_session *session)
     if (!module && !submodule) {
         err = nc_err(session->ctx, NC_ERR_INVALID_VALUE, NC_ERR_TYPE_APP);
         nc_err_set_msg(err, "The requested module was not found.", "en");
-        return nc_server_reply_err(err);
+        goto error;
     }
 
     /* check format */
@@ -712,37 +720,41 @@ nc_clb_default_get_schema(struct lyd_node *rpc, struct nc_session *session)
     } else {
         err = nc_err(session->ctx, NC_ERR_INVALID_VALUE, NC_ERR_TYPE_APP);
         nc_err_set_msg(err, "The requested format is not supported.", "en");
-        return nc_server_reply_err(err);
+        goto error;
     }
 
     /* print */
     ly_out_new_memory(&model_data, 0, &out);
     if (module) {
-        lys_print_module(out, module, outformat, 0, 0);
+        lyrc = lys_print_module(out, module, outformat, 0, 0);
     } else {
-        lys_print_submodule(out, submodule, outformat, 0, 0);
+        lyrc = lys_print_submodule(out, submodule, outformat, 0, 0);
     }
     ly_out_free(out, NULL, 0);
-    if (!model_data) {
-        ERRINT;
-        return NULL;
+    if (lyrc) {
+        err = nc_err(session->ctx, NC_ERR_OP_FAILED, NC_ERR_TYPE_APP);
+        nc_err_set_msg(err, ly_last_logmsg(), "en");
+        goto error;
     }
 
     /* create reply */
-    mod = ly_ctx_get_module_implemented(session->ctx, "ietf-netconf-monitoring");
-    if (!mod || lyd_new_inner(NULL, mod, "get-schema", 0, &data)) {
-        ERRINT;
-        free(model_data);
-        return NULL;
+    if (lyd_new_inner(NULL, nm_mod, "get-schema", 0, &data)) {
+        err = nc_err(session->ctx, NC_ERR_OP_FAILED, NC_ERR_TYPE_APP);
+        nc_err_set_msg(err, ly_last_logmsg(), "en");
+        goto error;
     }
     if (lyd_new_any(data, NULL, "data", model_data, LYD_ANYDATA_STRING, LYD_NEW_ANY_USE_VALUE | LYD_NEW_VAL_OUTPUT, NULL)) {
-        ERRINT;
-        free(model_data);
-        lyd_free_tree(data);
-        return NULL;
+        err = nc_err(session->ctx, NC_ERR_OP_FAILED, NC_ERR_TYPE_APP);
+        nc_err_set_msg(err, ly_last_logmsg(), "en");
+        goto error;
     }
 
     return nc_server_reply_data(data, NC_WD_EXPLICIT, NC_PARAMTYPE_FREE);
+
+error:
+    free(model_data);
+    lyd_free_tree(data);
+    return nc_server_reply_err(err);
 }
 
 API struct nc_server_reply *

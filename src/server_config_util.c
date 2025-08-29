@@ -205,6 +205,18 @@ cleanup:
 }
 
 API int
+nc_server_config_del_endpt(const char *endpt_name, struct lyd_node **config)
+{
+    NC_CHECK_ARG_RET(NULL, config, 1);
+
+    if (endpt_name) {
+        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']", endpt_name);
+    } else {
+        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint");
+    }
+}
+
+API int
 nc_server_config_add_unix_socket(const struct ly_ctx *ctx, const char *endpt_name, const char *path,
         const char *mode, const char *owner, const char *group, struct lyd_node **config)
 {
@@ -1045,18 +1057,6 @@ nc_server_config_add_ch_address_port(const struct ly_ctx *ctx, const char *clien
 
 cleanup:
     return ret;
-}
-
-API int
-nc_server_config_del_endpt(const char *endpt_name, struct lyd_node **config)
-{
-    NC_CHECK_ARG_RET(NULL, config, 1);
-
-    if (endpt_name) {
-        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint[name='%s']", endpt_name);
-    } else {
-        return nc_server_config_delete(config, "/ietf-netconf-server:netconf-server/listen/endpoints/endpoint");
-    }
 }
 
 API int

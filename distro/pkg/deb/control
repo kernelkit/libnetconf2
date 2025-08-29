@@ -15,7 +15,7 @@ Build-Depends: cmake,
 Vcs-Browser: https://github.com/CESNET/libnetconf2/tree/master
 Vcs-Git: https://github.com/CESNET/libnetconf2.git
 
-Package: libnetconf4
+Package: libnetconf5
 Depends: ${misc:Depends},
          ${shlibs:Depends}
 Architecture: any

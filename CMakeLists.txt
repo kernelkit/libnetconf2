@@ -381,7 +381,7 @@ endif()
 
 # generate API/ABI report
 if ("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
-    lib_abi_check(netconf2 "${headers}" ${LIBNETCONF2_SOVERSION_FULL} 5c72504e9a6fc578ed32fcfb15f59f50d2aab234)
+    lib_abi_check(netconf2 "${headers}" ${LIBNETCONF2_SOVERSION_FULL} 8ea8545008b715385c1fe8ccaabe48f3cc9f8e1c)
 endif()
 
 # source files to be covered by the 'format' target and a test with 'format-check' target

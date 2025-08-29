@@ -236,31 +236,6 @@ nc_client_set_thread_context(void *context)
     pthread_setspecific(nc_client_context_key, new);
 }
 
-/**
- * @brief Ext data callback for a context to provide schema mount data.
- */
-static LY_ERR
-nc_ly_ext_data_clb(const struct lysc_ext_instance *ext, const struct lyd_node *UNUSED(parent), void *user_data,
-        void **ext_data, ly_bool *ext_data_free)
-{
-    struct nc_session *session = user_data;
-
-    if (strcmp(ext->def->module->name, "ietf-yang-schema-mount") || strcmp(ext->def->name, "mount-point")) {
-        return LY_EINVAL;
-    }
-
-    if (!session->opts.client.ext_data) {
-        ERR(session, "Unable to parse mounted data, no operational schema-mounts data received from the server.");
-        return LY_ENOTFOUND;
-    }
-
-    /* return ext data */
-    *ext_data = session->opts.client.ext_data;
-    *ext_data_free = 0;
-
-    return LY_SUCCESS;
-}
-
 int
 nc_client_session_new_ctx(struct nc_session *session, struct ly_ctx *ctx)
 {
@@ -280,9 +255,6 @@ nc_client_session_new_ctx(struct nc_session *session, struct ly_ctx *ctx)
 
         /* set callback for getting modules, if provided */
         ly_ctx_set_module_imp_clb(ctx, client_opts.schema_clb, client_opts.schema_clb_data);
-
-        /* set ext data callback to avoid errors that no callback is set, the data are stored later, if any */
-        ly_ctx_set_ext_data_clb(ctx, nc_ly_ext_data_clb, session);
     } else {
         session->flags |= NC_SESSION_SHAREDCTX;
     }
@@ -1228,70 +1200,6 @@ nc_ctx_fill_ietf_netconf(struct nc_session *session, struct module_info *modules
     return 0;
 }
 
-API int
-nc_client_set_new_session_context_schema_mount(struct nc_session *session)
-{
-    int rc = 0, yanglib_support = 0, xpath_support = 0, nmda_support = 0;
-    struct lyd_node *oper_data = NULL;
-    const struct lys_module *mod;
-
-    if (session->flags & NC_SESSION_SHAREDCTX) {
-        /* context is already fully set up */
-        goto cleanup;
-    }
-
-    /* check all useful capabilities */
-    if (ly_ctx_get_module_implemented(session->ctx, "ietf-yang-library")) {
-        yanglib_support = 1;
-    }
-    if ((mod = ly_ctx_get_module_implemented(session->ctx, "ietf-netconf")) && !lys_feature_value(mod, "xpath")) {
-        xpath_support = 1;
-    }
-    if (ly_ctx_get_module_implemented(session->ctx, "ietf-netconf-nmda")) {
-        nmda_support = 1;
-    }
-
-    if (!yanglib_support) {
-        ERR(session, "Module \"ietf-yang-library\" missing to retrieve schema-mount data.");
-        rc = -1;
-        goto cleanup;
-    }
-
-    /* get yang-library and schema-mounts operational data */
-    if (xpath_support) {
-        if ((rc = get_oper_data(session, nmda_support, "/ietf-yang-library:* | /ietf-yang-schema-mount:*", &oper_data))) {
-            goto cleanup;
-        }
-    } else {
-        if ((rc = get_oper_data(session, nmda_support,
-                "<modules-state xmlns=\"urn:ietf:params:xml:ns:yang:ietf-yang-library\"/>"
-                "<schema-mounts xmlns=\"urn:ietf:params:xml:ns:yang:ietf-yang-schema-mount\"/>", &oper_data))) {
-            goto cleanup;
-        }
-    }
-
-    if (!oper_data || lyd_find_path(oper_data, "/ietf-yang-schema-mount:schema-mounts", 0, NULL)) {
-        /* no schema-mounts operational data */
-        goto cleanup;
-    }
-
-    /* validate the data for the parent reference prefixes to be resolved */
-    if (lyd_validate_all(&oper_data, NULL, LYD_VALIDATE_PRESENT, NULL)) {
-        ERR(session, "Invalid operational data received from the server (%s).", ly_err_last(LYD_CTX(oper_data))->msg);
-        rc = -1;
-        goto cleanup;
-    }
-
-    /* store the data in the session */
-    lyd_free_siblings(session->opts.client.ext_data);
-    session->opts.client.ext_data = oper_data;
-    oper_data = NULL;
-
-cleanup:
-    lyd_free_siblings(oper_data);
-    return rc;
-}
-
 int
 nc_ctx_check_and_fill(struct nc_session *session)
 {
@@ -1418,11 +1326,6 @@ nc_ctx_check_and_fill(struct nc_session *session)
 
     /* compile it */
     if (ly_ctx_compile(session->ctx)) {
-        goto cleanup;
-    }
-
-    /* set support for schema-mount, if possible (requires ietf-yang-library support) */
-    if (yanglib_support && nc_client_set_new_session_context_schema_mount(session)) {
         goto cleanup;
     }
 

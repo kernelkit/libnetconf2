@@ -835,7 +835,6 @@ struct nc_session {
             struct nc_msg_cont *msgs;      /**< queue for messages received of different type than expected */
             ATOMIC_T ntf_thread_count;     /**< number of running notification threads */
             ATOMIC_T ntf_thread_running;   /**< flag whether there are notification threads for this session running or not */
-            struct lyd_node *ext_data;     /**< LY ext data used in the context callback */
         } client;
         struct {
             /* server side only data */

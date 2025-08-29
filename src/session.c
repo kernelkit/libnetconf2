@@ -983,26 +983,6 @@ nc_session_free(struct nc_session *session, void (*data_free)(void *))
             }
             free(session->opts.client.cpblts);
         }
-
-        /* LY ext data */
-#ifdef NC_ENABLED_SSH_TLS
-        struct nc_session *siter;
-
-        if ((session->flags & NC_SESSION_SHAREDCTX) && (session->ti_type == NC_TI_SSH) && session->ti.libssh.next) {
-            for (siter = session->ti.libssh.next; siter != session; siter = siter->ti.libssh.next) {
-                if (siter->status != NC_STATUS_STARTING) {
-                    /* move LY ext data to this session */
-                    assert(!siter->opts.client.ext_data);
-                    siter->opts.client.ext_data = session->opts.client.ext_data;
-                    session->opts.client.ext_data = NULL;
-                    break;
-                }
-            }
-        } else
-#endif /* NC_ENABLED_SSH_TLS */
-        {
-            lyd_free_siblings(session->opts.client.ext_data);
-        }
     }
 
     if (session->data && data_free) {

@@ -30,7 +30,7 @@ Description: library implementing NETCONF protocol - runtime
 
 Package: libnetconf2-dev
 Depends: libyang-dev,
-         libnetconf4 (= ${binary:Version}),
+         libnetconf5 (= ${binary:Version}),
          ${misc:Depends}
 Section: libdevel
 Architecture: any

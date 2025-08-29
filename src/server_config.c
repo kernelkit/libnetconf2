@@ -3898,7 +3898,7 @@ nc_server_config_unix(const struct lyd_node *node, enum nc_operation op)
     if (op == NC_OP_CREATE) {
         endpt->ti = NC_TI_UNIX;
         endpt->opts.unix = calloc(1, sizeof *endpt->opts.unix);
-        NC_CHECK_ERRMEM_RET(!endpt->opts.ssh, 1);
+        NC_CHECK_ERRMEM_RET(!endpt->opts.unix, 1);
 
         /* set non-zero default values */
         endpt->opts.unix->uid = (uid_t)-1;

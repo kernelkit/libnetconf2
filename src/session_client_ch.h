@@ -323,16 +323,6 @@ int nc_client_tls_ch_set_trusted_ca_paths(const char *ca_file, const char *ca_di
  */
 void nc_client_tls_ch_get_trusted_ca_paths(const char **ca_file, const char **ca_dir);
 
-/**
- * @brief Deprecated.
- */
-int nc_client_tls_ch_set_crl_paths(const char *crl_file, const char *crl_dir);
-
-/**
- * @brief Deprecated.
- */
-void nc_client_tls_ch_get_crl_paths(const char **crl_file, const char **crl_dir);
-
 /** @} Client-side Call Home on TLS */
 
 #endif /* NC_ENABLED_SSH_TLS */

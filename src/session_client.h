@@ -458,20 +458,9 @@ int nc_client_tls_set_trusted_ca_paths(const char *ca_file, const char *ca_dir);
 void nc_client_tls_get_trusted_ca_paths(const char **ca_file, const char **ca_dir);
 
 /**
- * @brief Deprecated.
- */
-int nc_client_tls_set_crl_paths(const char *crl_file, const char *crl_dir);
-
-/**
- * @brief Deprecated.
- */
-void nc_client_tls_get_crl_paths(const char **crl_file, const char **crl_dir);
-
-/**
  * @brief Connect to the NETCONF server using TLS transport (via libssl)
  *
- * TLS session is created with the certificates set using nc_client_tls_* functions, which must be called beforehand!
- * If the caller needs to use specific TLS session properties, they are supposed to use ::nc_connect_libssl().
+ * TLS session is created with the certificates set in the configuration.
  *
  * @param[in] host Hostname or address (both Ipv4 and IPv6 are accepted) of the target server.
  * 'localhost' is used by default if NULL is specified. It is verified by TLS when connecting to it.
@@ -482,11 +471,6 @@ void nc_client_tls_get_crl_paths(const char **crl_file, const char **crl_dir);
  * @return Created NETCONF session object or NULL on error.
  */
 struct nc_session *nc_connect_tls(const char *host, uint16_t port, struct ly_ctx *ctx);
-
-/**
- * @brief Deprecated. Should not be needed.
- */
-struct nc_session *nc_connect_libssl(void *tls, struct ly_ctx *ctx);
 
 /** @} Client TLS */
 

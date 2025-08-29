@@ -187,34 +187,6 @@ nc_client_tls_ch_get_trusted_ca_paths(const char **ca_file, const char **ca_dir)
 }
 
 API int
-nc_client_tls_set_crl_paths(const char *UNUSED(crl_file), const char *UNUSED(crl_dir))
-{
-    ERR(NULL, "nc_client_tls_set_crl_paths() is deprecated, do not use it.");
-    return -1;
-}
-
-API int
-nc_client_tls_ch_set_crl_paths(const char *UNUSED(crl_file), const char *UNUSED(crl_dir))
-{
-    ERR(NULL, "nc_client_tls_ch_set_crl_paths() is deprecated, do not use it.");
-    return -1;
-}
-
-API void
-nc_client_tls_get_crl_paths(const char **UNUSED(crl_file), const char **UNUSED(crl_dir))
-{
-    ERR(NULL, "nc_client_tls_get_crl_paths() is deprecated, do not use it.");
-    return;
-}
-
-API void
-nc_client_tls_ch_get_crl_paths(const char **UNUSED(crl_file), const char **UNUSED(crl_dir))
-{
-    ERR(NULL, "nc_client_tls_ch_get_crl_paths() is deprecated, do not use it.");
-    return;
-}
-
-API int
 nc_client_tls_ch_add_bind_listen(const char *address, uint16_t port)
 {
     return nc_client_ch_add_bind_listen(address, port, NULL, NC_TI_TLS);
@@ -439,13 +411,6 @@ fail:
     free(ip_host);
     nc_session_free(session, NULL);
     nc_tls_ctx_destroy_wrap(&tls_ctx);
-    return NULL;
-}
-
-API struct nc_session *
-nc_connect_libssl(void *UNUSED(tls), struct ly_ctx *UNUSED(ctx))
-{
-    ERR(NULL, "nc_connect_libssl() is deprecated, do not use it.");
     return NULL;
 }
 

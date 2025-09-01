@@ -578,7 +578,7 @@ nc_write(struct nc_session *session, const void *buf, uint32_t count)
         case NC_TI_UNIX:
             fd = session->ti_type == NC_TI_FD ? session->ti.fd.out : session->ti.unixsock.sock;
             c = write(fd, (char *)(buf + written), count - written);
-            if ((c < 0) && ((errno == EAGAIN) || (errno = EWOULDBLOCK))) {
+            if ((c < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) {
                 c = 0;
             } else if ((c < 0) && (errno == EINTR)) {
                 c = 0;

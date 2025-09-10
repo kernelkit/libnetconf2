@@ -2202,14 +2202,14 @@ recv_reply(struct nc_session *session, int timeout, struct lyd_node *op, uint64_
 {
     LY_ERR lyrc;
     struct ly_in *msg = NULL;
-    NC_MSG_TYPE ret = NC_MSG_ERROR;
+    NC_MSG_TYPE ret;
     uint32_t temp_lo = LY_LOSTORE, *prev_lo;
 
     assert(op && (op->schema->nodetype & (LYS_RPC | LYS_ACTION)));
 
     *envp = NULL;
 
-    /* Receive messages until a rpc-reply is found or a timeout or error reached */
+    /* receive a message */
     ret = recv_msg(session, timeout, NC_MSG_REPLY, &msg);
     if (ret != NC_MSG_REPLY) {
         goto cleanup;
@@ -2223,6 +2223,8 @@ recv_reply(struct nc_session *session, int timeout, struct lyd_node *op, uint64_
     if (*envp) {
         /* if the envelopes were parsed, check the message-id, even on error */
         ret = recv_reply_check_msgid(session, *envp, msgid);
+    }
+    if (ret != NC_MSG_REPLY) {
         goto cleanup;
     }
 

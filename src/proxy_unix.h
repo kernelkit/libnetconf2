@@ -44,6 +44,10 @@ int nc_proxy_unix_connect(const char *address, const char *username);
 /**
  * @brief Read a full chunked-framing message from a FD.
  *
+ * Set @p version according to the current [NETCONF specification](https://datatracker.ietf.org/doc/html/rfc6241#section-8.1).
+ * That will almost always result in using NETCONF 1.0 encapsulation for the hello message (first exchanged message)
+ * and NETCONF 1.1 for all the following messages (as long as the server supports this NETCONF version).
+ *
  * @param[in] fd File descriptor to read from.
  * @param[in] version NETCONF version to use for message encapsulation.
  * @param[in] timeout_ms Timeout for reading in milliseconds. Use negative value for blocking read, 0 for non-blocking read.
@@ -59,6 +63,8 @@ int nc_proxy_read_msg(int fd, NC_PROT_VERSION version, int timeout_ms, char **bu
  * @brief Write data encapsulated as a chunked-framing message to a FD.
  *
  * Keeps writing until all the data are written or a fatal error is encountered.
+ *
+ * Set @p version based on the information for ::nc_proxy_read_msg().
  *
  * @param[in] fd File descriptor to write to.
  * @param[in] version NETCONF version to use for message encapsulation.

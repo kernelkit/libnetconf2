@@ -491,6 +491,7 @@ nc_read_msg_poll_io(struct nc_session *session, int io_timeout, struct ly_in **m
     if (ret > 0) {
         ret = 1;
     } else {
+        free(buf);
         return ret;
     }
 

@@ -580,7 +580,7 @@ nc_write(struct nc_session *session, const void *buf, uint32_t count)
         case NC_TI_FD:
         case NC_TI_UNIX:
             fd = session->ti_type == NC_TI_FD ? session->ti.fd.out : session->ti.unixsock.sock;
-            c = write(fd, (char *)(buf + written), count - written);
+            c = write(fd, (char *)buf + written, count - written);
             if ((c < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) {
                 c = 0;
             } else if ((c < 0) && (errno == EINTR)) {
@@ -604,14 +604,14 @@ nc_write(struct nc_session *session, const void *buf, uint32_t count)
                 session->term_reason = NC_SESSION_TERM_DROPPED;
                 return -1;
             }
-            c = ssh_channel_write(session->ti.libssh.channel, (char *)(buf + written), count - written);
+            c = ssh_channel_write(session->ti.libssh.channel, (char *)buf + written, count - written);
             if ((c == SSH_ERROR) || (c == -1)) {
                 ERR(session, "SSH channel write failed.");
                 return -1;
             }
             break;
         case NC_TI_TLS:
-            c = nc_tls_write_wrap(session, (const unsigned char *)(buf + written), count - written);
+            c = nc_tls_write_wrap(session, (const unsigned char *)buf + written, count - written);
             if (c < 0) {
                 /* possible client dc, or some socket/TLS communication error */
                 return -1;

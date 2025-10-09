@@ -557,7 +557,7 @@ nc_server_config_realloc(const char *key_value, void **ptr, size_t size, void *c
     (*cnt)++;
 
     /* access the first member of the supposed structure */
-    name = (char **)((*ptr) + ((*cnt - 1) * size));
+    name = (char **)((char *)(*ptr) + ((*cnt - 1) * size));
 
     /* and set it's value */
     *name = strdup(key_value);

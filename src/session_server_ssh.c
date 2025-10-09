@@ -994,6 +994,9 @@ nc_server_ssh_auth_kbdint_system(struct nc_session *session, ssh_message msg)
     /* authenticate using /etc/passwd and /etc/shadow */
     rc = nc_server_ssh_auth_kbdint_passwd(session, session->username, msg);
 #else
+    (void)session;
+    (void)msg;
+
     ERR(NULL, "Keyboard-interactive method not supported.");
     rc = 1;
 #endif

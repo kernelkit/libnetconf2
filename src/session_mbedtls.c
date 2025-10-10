@@ -1946,13 +1946,13 @@ nc_tls_append_cipher_suite_wrap(struct nc_server_tls_opts *opts, const char *cip
     /* append the cipher suite to a zero terminated array */
     if (!opts->ciphers) {
         /* first entry, account for terminating 0 */
-        opts->ciphers = malloc(2 * sizeof *cipher_id);
+        opts->ciphers = malloc(2 * sizeof cipher_id);
         NC_CHECK_ERRMEM_RET(!opts->ciphers, 1);
         ((int *)opts->ciphers)[0] = cipher_id;
         opts->cipher_count = 1;
     } else {
         /* +2 because of terminating 0 */
-        opts->ciphers = nc_realloc(opts->ciphers, (opts->cipher_count + 2) * sizeof *cipher_id);
+        opts->ciphers = nc_realloc(opts->ciphers, (opts->cipher_count + 2) * sizeof cipher_id);
         NC_CHECK_ERRMEM_RET(!opts->ciphers, 1);
         ((int *)opts->ciphers)[opts->cipher_count] = cipher_id;
         opts->cipher_count++;

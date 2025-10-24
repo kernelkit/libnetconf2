@@ -139,6 +139,8 @@ int nc_server_config_del_endpt(const char *endpt_name, struct lyd_node **config)
 /**
  * @brief Creates new YANG data nodes for a UNIX socket endpoint.
  *
+ * To learn how authentication works, look at ::nc_server_config_add_unix_user_mapping().
+ *
  * @param[in] ctx libyang context.
  * @param[in] endpt_name Arbitrary identifier of the endpoint.
  * If an endpoint with this identifier already exists, its contents might be changed.
@@ -162,11 +164,11 @@ int nc_server_config_add_unix_socket(const struct ly_ctx *ctx, const char *endpt
  *
  * Specifies who can connect to a UNIX socket endpoint. There are 3 following scenarios:
  *
- * 1)  If no mappings are configured for the client @p system_user, then the client can
+ * 1) If no mappings are configured for the client @p system_user, then the client can
  * only connect if its username matches @p netconf_user.
  *
  * 2) If a mapping for the client @p system_user is configured, but no @p netconf_user s
- * are specified, then the client cannot connect as any username.
+ * are specified, then the client cannot connect with any username.
  *
  * 3) If a mapping for the client @p system_user is configured, and at least one @p netconf_user
  * is specified, then the client can connect only with one of the specified usernames.

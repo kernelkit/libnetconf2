@@ -35,7 +35,6 @@
 #include "session_server_ch.h"
 
 volatile int exit_application = 0;
-struct lyd_node *tree;
 
 static void
 sigint_handler(int signum)
@@ -381,7 +380,6 @@ cleanup:
     }
     nc_ps_free(ps);
     nc_server_destroy();
-    lyd_free_all(tree);
     ly_ctx_destroy(context);
     return rc;
 }

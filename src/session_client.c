@@ -485,7 +485,7 @@ retrieve_module_data_getschema(const char *name, const char *rev, struct clb_dat
         model_data = strdup(get_schema_data->value.str);
         break;
     case LYD_ANYDATA_DATATREE:
-        lyd_print_mem(&model_data, get_schema_data->value.tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+        lyd_print_mem(&model_data, get_schema_data->value.tree, LYD_XML, LYD_PRINT_SIBLINGS);
         break;
     case LYD_ANYDATA_JSON:
         ERRINT;

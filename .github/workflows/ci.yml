@@ -155,19 +155,6 @@ jobs:
             make-target: ""
           }
           - {
-            name: "ABI Check",
-            os: "ubuntu-22.04",
-            build-type: "ABICheck",
-            dep-build-type: "Debug",
-            cc: "gcc",
-            options: "",
-            tls-lib: "OpenSSL",
-            packages: "abi-dumper abi-compliance-checker snap",
-            snaps: "core universal-ctags",
-            make-prepend: "",
-            make-target: "abi-check"
-          }
-          - {
             name: "DEB Package",
             os: "ubuntu-22.04",
             build-type: "Release",

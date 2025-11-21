@@ -522,7 +522,7 @@ _nc_server_tls_verify_peer_cert(void *peer_cert, struct nc_server_tls_client_aut
     int ret;
     void *cert;
     struct nc_certificate *certs;
-    uint32_t i, cert_count;
+    uint32_t i, cert_count = 0;
 
     if (client_auth->ee_certs_store == NC_STORE_LOCAL) {
         /* local definition */

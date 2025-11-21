@@ -4171,9 +4171,7 @@ cleanup:
     if (targ->clb_free_data) {
         targ->clb_free_data(targ->clb_data);
     }
-    if (exp_dates) {
-        nc_server_notif_cert_exp_data_destroy(exp_dates, exp_date_count, intervals);
-    }
+    nc_server_notif_cert_exp_data_destroy(exp_dates, exp_date_count, intervals);
     free(targ);
     return NULL;
 }

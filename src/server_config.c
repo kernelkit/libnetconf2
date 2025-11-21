@@ -5438,12 +5438,25 @@ nc_server_config_tls_dup(const struct nc_server_tls_opts *src, struct nc_server_
         dst_ctn->id = src_ctn->id;
         if (src_ctn->fingerprint) {
             dst_ctn->fingerprint = strdup(src_ctn->fingerprint);
-            NC_CHECK_ERRMEM_GOTO(!dst_ctn->fingerprint, rc = 1, cleanup);
+            if (!dst_ctn->fingerprint) {
+                /* we need to free the dst_ctn we just allocated */
+                free(dst_ctn);
+                rc = 1;
+                ERRMEM;
+                goto cleanup;
+            }
         }
         dst_ctn->map_type = src_ctn->map_type;
         if (src_ctn->name) {
             dst_ctn->name = strdup(src_ctn->name);
-            NC_CHECK_ERRMEM_GOTO(!dst_ctn->name, rc = 1, cleanup);
+            if (!dst_ctn->name) {
+                /* we need to free the dst_ctn we just allocated */
+                free(dst_ctn->fingerprint);
+                free(dst_ctn);
+                rc = 1;
+                ERRMEM;
+                goto cleanup;
+            }
         }
 
         if (prev_ctn) {

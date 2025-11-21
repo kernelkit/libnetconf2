@@ -645,19 +645,22 @@ read_config_file(const char *path, char **mem)
 {
     FILE *f;
     long fsize;
+    size_t read;
 
     f = fopen(path, "r");
     assert_non_null(f);
 
     fseek(f, 0, SEEK_END);
     fsize = ftell(f);
+    assert_true(fsize > 0);
     fseek(f, 0, SEEK_SET);
 
     *mem = malloc(fsize + 1);
     assert_non_null(*mem);
 
-    fread(*mem, 1, fsize, f);
-    (*mem)[fsize] = '\0';
+    read = fread(*mem, 1, fsize, f);
+    assert_int_equal(read, fsize);
+    (*mem)[read] = '\0';
 
     fclose(f);
 }

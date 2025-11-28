@@ -341,15 +341,17 @@ nc_server_ssh_get_system_keys_path(const char *username, char **out_path)
         }
 
         if (ret) {
-            free(path);
             goto cleanup;
         }
     }
 
     *out_path = path;
+    path = NULL;
+
 cleanup:
     free(uid);
     free(buf);
+    free(path);
     return ret;
 }
 

@@ -1564,17 +1564,6 @@ nc_server_ssh_auth(struct nc_session *session, struct nc_server_ssh_opts *opts, 
         }
     }
 
-    if ((method != SSH_AUTH_METHOD_NONE) && (method != SSH_AUTH_METHOD_PASSWORD) &&
-            (method != SSH_AUTH_METHOD_PUBLICKEY) && (method != SSH_AUTH_METHOD_INTERACTIVE)) {
-        ++session->opts.server.ssh_auth_attempts;
-        VRB(session, "Authentication method \"%s\" not supported.", str_method);
-        ssh_message_reply_default(msg);
-        return 0;
-    }
-
-    /* CONFIG READ LOCK */
-    pthread_rwlock_rdlock(&server_opts.config_lock);
-
     /* try authenticating, if local users are supported, then the configured user must authenticate via all of his
      * configured auth methods, otherwise for system users just one is needed,
      * 0 return indicates success, 1 fail (msg not yet replied to), -1 fail (msg was replied to) */
@@ -1584,13 +1573,14 @@ nc_server_ssh_auth(struct nc_session *session, struct nc_server_ssh_opts *opts, 
         ret = nc_server_ssh_auth_password(session, local_users_supported, auth_client, msg);
     } else if (method == SSH_AUTH_METHOD_PUBLICKEY) {
         ret = nc_server_ssh_auth_pubkey(session, local_users_supported, auth_client, msg);
-    } else {
-        assert(method == SSH_AUTH_METHOD_INTERACTIVE);
+    } else if (method == SSH_AUTH_METHOD_INTERACTIVE) {
         ret = nc_server_ssh_auth_kbdint(session, local_users_supported, auth_client, msg);
+    } else {
+        ++session->opts.server.ssh_auth_attempts;
+        VRB(session, "Authentication method \"%s\" not supported.", str_method);
+        ssh_message_reply_default(msg);
+        return 0;
     }
-
-    /* CONFIG UNLOCK */
-    pthread_rwlock_unlock(&server_opts.config_lock);
 
     if (!ret) {
         auth_state->success_methods |= method;

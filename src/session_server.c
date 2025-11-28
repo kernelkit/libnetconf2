@@ -2217,7 +2217,14 @@ nc_ps_poll_sess(struct nc_ps_session *ps_session, time_t now_mono)
             /* session is fine, work with it */
             ps_session->state = NC_PS_STATE_BUSY;
 
+            /* CONFIG READ LOCK */
+            pthread_rwlock_rdlock(&server_opts.config_lock);
+
             ret = nc_ps_poll_session_io(ps_session->session, NC_SESSION_LOCK_TIMEOUT, now_mono, msg);
+
+            /* CONFIG UNLOCK */
+            pthread_rwlock_unlock(&server_opts.config_lock);
+
             switch (ret) {
             case NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR:
                 ERR(ps_session->session, "%s.", msg);

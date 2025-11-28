@@ -483,6 +483,7 @@ nc_server_unix_get_socket_path(const struct nc_endpt *endpt)
         }
         if (!p) {
             ERR(NULL, "UNIX socket path mapping for endpoint \"%s\" not found.", endpt->name);
+            return NULL;
         }
 
         path = strdup(p);

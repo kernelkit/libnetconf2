@@ -683,7 +683,8 @@ nc_server_config_load_modules(struct ly_ctx **ctx)
     /* no ssh-x509-certs, asymmetric-key-pair-generation */
     const char *ietf_ssh_common[] = {"algorithm-discovery", "transport-params", NULL};
     /* no ssh-server-keepalives and local-user-auth-hostbased */
-    const char *ietf_ssh_server[] = {"local-users-supported", "local-user-auth-publickey", "local-user-auth-password", "local-user-auth-none", NULL};
+    /* no local-users-supported - use system users (PAM/shadow) instead */
+    const char *ietf_ssh_server[] = {NULL};
     /* all features */
     const char *iana_ssh_encryption_algs[] = {NULL};
     /* all features */

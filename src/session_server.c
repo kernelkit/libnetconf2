@@ -2097,15 +2097,21 @@ nc_ps_poll_session_io(struct nc_session *session, int io_timeout, time_t now_mon
 
         r = ssh_channel_poll_timeout(session->ti.libssh.channel, 0, 0);
         if (r == SSH_EOF) {
-            sprintf(msg, "SSH channel unexpected EOF");
+            sprintf(msg, "SSH channel closed by the other side");
             session->status = NC_STATUS_INVALID;
             session->term_reason = NC_SESSION_TERM_DROPPED;
-            ret = NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR;
+            ret = NC_PSPOLL_SESSION_TERM;
         } else if (r == SSH_ERROR) {
-            sprintf(msg, "SSH channel poll error (%s)", ssh_get_error(session->ti.libssh.session));
+            if (!ssh_is_connected(session->ti.libssh.session)) {
+                sprintf(msg, "SSH session disconnected");
+                session->term_reason = NC_SESSION_TERM_DROPPED;
+                ret = NC_PSPOLL_SESSION_TERM;
+            } else {
+                sprintf(msg, "SSH channel poll error (%s)", ssh_get_error(session->ti.libssh.session));
+                session->term_reason = NC_SESSION_TERM_OTHER;
+                ret = NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR;
+            }
             session->status = NC_STATUS_INVALID;
-            session->term_reason = NC_SESSION_TERM_OTHER;
-            ret = NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR;
         } else if (!r) {
             /* no application data received */
             ret = NC_PSPOLL_TIMEOUT;

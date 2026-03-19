@@ -376,12 +376,17 @@ nc_read_poll(struct nc_session *session, int io_timeout)
         /* EINTR is handled, it resumes waiting */
         ret = ssh_channel_poll_timeout(session->ti.libssh.channel, io_timeout, 0);
         if (ret == SSH_ERROR) {
-            ERR(session, "SSH channel poll error (%s).", ssh_get_error(session->ti.libssh.session));
+            if (!ssh_is_connected(session->ti.libssh.session)) {
+                VRB(session, "SSH session disconnected.");
+                session->term_reason = NC_SESSION_TERM_DROPPED;
+            } else {
+                ERR(session, "SSH channel poll error (%s).", ssh_get_error(session->ti.libssh.session));
+                session->term_reason = NC_SESSION_TERM_OTHER;
+            }
             session->status = NC_STATUS_INVALID;
-            session->term_reason = NC_SESSION_TERM_OTHER;
             return -1;
         } else if (ret == SSH_EOF) {
-            ERR(session, "SSH channel unexpected EOF.");
+            VRB(session, "SSH channel closed by the other side.");
             session->status = NC_STATUS_INVALID;
             session->term_reason = NC_SESSION_TERM_DROPPED;
             return -1;

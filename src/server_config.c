@@ -4401,6 +4401,11 @@ nc_server_config_netconf_server(const struct lyd_node *tree, int is_diff, struct
     struct lyd_node *subtree;
     enum nc_operation initial_op;
 
+    /* not loaded by a server that only listens on a UNIX socket */
+    if (!ly_ctx_get_module_implemented(LYD_CTX(tree), "ietf-netconf-server")) {
+        return 0;
+    }
+
     prev_lo = ly_log_options(0);
 
     /* try to find the netconf-server subtree */
@@ -5530,6 +5535,11 @@ nc_server_config_libnetconf2_netconf_server(const struct lyd_node *tree, int is_
     struct lyd_node *subtree;
     enum nc_operation initial_op;
 
+    /* not loaded by a server that only listens on a UNIX socket */
+    if (!ly_ctx_get_module_implemented(LYD_CTX(tree), "libnetconf2-netconf-server")) {
+        return 0;
+    }
+
     prev_lo = ly_log_options(0);
 
     /* try to find the ln2-netconf-server subtree */
@@ -6464,6 +6474,94 @@ cleanup:
 
     /* release the new generation, it was either not published or it is NULL */
     nc_server_config_release(config);
+
+    /* CONFIG UPDATE UNLOCK */
+    nc_mutex_unlock(&server_opts.config_update_lock, __func__);
+    return ret;
+}
+
+API int
+nc_server_add_unix_endpt(const char *endpoint_name, const char *socket_path, mode_t mode)
+{
+    int ret = 0;
+    LYA_COUNT_T i;
+    const struct nc_server_config *cur_config = NULL;
+    struct nc_server_config *config_copy = NULL, *old_config = NULL;
+    struct nc_endpt *endpt;
+
+    NC_CHECK_ARG_RET(NULL, endpoint_name, socket_path, 1);
+
+    /* a hidden-path endpoint, its socket path is kept outside the configuration */
+    if (nc_server_set_unix_socket_path(endpoint_name, socket_path)) {
+        return 1;
+    }
+
+    /* CONFIG UPDATE LOCK */
+    if (nc_mutex_lock(&server_opts.config_update_lock, NC_CONFIG_UPDATE_LOCK_TIMEOUT, __func__) != 1) {
+        ERR(NULL, "Timed out waiting for another configuration update to finish.");
+        return 1;
+    }
+
+    NC_CHECK_GOTO(ret = nc_server_config_new(&config_copy), cleanup);
+
+    cur_config = nc_server_config_acquire();
+    NC_CHECK_ERR_GOTO(!cur_config, ERR(NULL, "Acquiring the current server configuration failed."); ret = 1, cleanup);
+    NC_CHECK_ERR_GOTO(ret = nc_server_config_dup(cur_config, config_copy),
+            ERR(NULL, "Duplicating current server configuration failed."), cleanup);
+    nc_server_config_release(cur_config);
+    cur_config = NULL;
+
+    LYA_FOR(config_copy->endpts, i) {
+        if (!strcmp(config_copy->endpts[i].name, endpoint_name)) {
+            ERR(NULL, "Endpoint \"%s\" already exists.", endpoint_name);
+            ret = 1;
+            goto cleanup;
+        }
+    }
+
+    LYA_ADD_ITEM(config_copy->endpts, endpt, ERRMEM; ret = 1; goto cleanup);
+    endpt->name = strdup(endpoint_name);
+    NC_CHECK_ERRMEM_GOTO(!endpt->name, ret = 1, cleanup);
+
+    endpt->ti = NC_TI_UNIX;
+    endpt->opts.unix = calloc(1, sizeof *endpt->opts.unix);
+    NC_CHECK_ERRMEM_GOTO(!endpt->opts.unix, ret = 1, cleanup);
+    endpt->opts.unix->path_type = NC_UNIX_SOCKET_PATH_HIDDEN;
+    endpt->opts.unix->mode = mode;
+    endpt->opts.unix->uid = (uid_t)-1;
+    endpt->opts.unix->gid = (gid_t)-1;
+
+    /* a hidden path binding has no address, it is resolved from the socket path mapping */
+    LYA_ADD(endpt->binds, ERRMEM; ret = 1; goto cleanup);
+
+    NC_CHECK_ERR_GOTO(ret = nc_server_binds_reconcile(config_copy),
+            ERR(NULL, "Starting to listen on endpoint \"%s\" failed.", endpoint_name), cleanup);
+
+    /* CONFIG WR LOCK - only the pointer swap */
+    if (nc_rwlock_lock(&server_opts.config_lock, NC_RWLOCK_WRITE, NC_CONFIG_LOCK_TIMEOUT, __func__) != 1) {
+        ERR(NULL, "Timed out waiting for the configuration lock, the endpoint was not added.");
+        ret = 1;
+        goto rollback;
+    }
+
+    old_config = nc_server_config_publish(config_copy);
+    config_copy = NULL;
+
+    /* CONFIG UNLOCK */
+    nc_rwlock_unlock(&server_opts.config_lock, __func__);
+
+    nc_server_config_release(old_config);
+    goto cleanup;
+
+rollback:
+    cur_config = nc_server_config_acquire();
+    if (cur_config) {
+        nc_server_binds_reconcile(cur_config);
+    }
+
+cleanup:
+    nc_server_config_release(cur_config);
+    nc_server_config_release(config_copy);
 
     /* CONFIG UPDATE UNLOCK */
     nc_mutex_unlock(&server_opts.config_update_lock, __func__);

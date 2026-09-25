@@ -17,6 +17,8 @@ NETCONF 1.0 ([RFC 4741](https://tools.ietf.org/html/rfc4741)) as well as NETCONF
 
 * NETCONF over SSH ([RFC 4742](https://tools.ietf.org/html/rfc4742), [RFC 6242](https://tools.ietf.org/html/rfc6242)),
   using [libssh](https://www.libssh.org/).
+  * Optionally as a *subsystem* of [OpenSSH](https://www.openssh.com/), without libssh, see
+    [NETCONF as an OpenSSH subsystem](#netconf-as-an-openssh-subsystem).
 * NETCONF over TLS ([RFC 7589](https://tools.ietf.org/html/rfc7589)), using [OpenSSL](https://www.openssl.org/).
   * DNSSEC SSH Key Fingerprints ([RFC 4255](https://tools.ietf.org/html/rfc4255))
 * NETCONF over pre-established transport sessions (using this mechanism the communication can be tunneled through
@@ -125,6 +127,48 @@ in the same way. The following command has actually the same effect as
 specifying no option since it specifies the default settings.
 ```
 $ cmake -DENABLE_SSH_TLS=ON ..
+```
+
+### NETCONF as an OpenSSH subsystem
+
+A **libnetconf2** server can also be run as a *subsystem* of OpenSSH, in the
+same way as `sftp-server`.  The SSH daemon authenticates the user and starts
+`netconf-subsystem`, a small helper that bridges the session to a UNIX socket
+the server listens on.  The username comes from the socket peer credentials,
+so NACM and session monitoring work as usual, while users, keys and ciphers
+are managed in the OpenSSH daemon configuration.
+
+This mode has its limitations.  The library must be built without its own
+transports, `ENABLE_SSH_TLS=OFF`, which means no NETCONF over TLS (RFC 7589),
+no Call Home (RFC 8071), and no `ietf-netconf-server.yang` configuration:
+listen addresses, ports, and host keys are all OpenSSH settings.  In return
+the library depends on nothing but **libyang**.
+
+The helper is not built by default, enable it and, optionally, change the
+socket it connects to:
+
+```
+$ cmake -DENABLE_SSH_TLS=OFF -DENABLE_SUBSYSTEM=ON -DNC_SUBSYSTEM_SOCKET=/run/netconf.sock ..
+```
+
+On the OpenSSH side, declare the subsystem in `sshd_config`:
+
+```
+Subsystem netconf /usr/libexec/libnetconf2/netconf-subsystem
+```
+
+Clients then connect with `ssh -s host netconf`.  To also serve the standard
+NETCONF port, 830 (RFC 4742), let OpenSSH listen there too and dedicate the
+port to NETCONF, so that no login shell is reachable through it:
+
+```
+Port 22
+Port 830
+Match LocalPort 830
+	ForceCommand /usr/libexec/libnetconf2/netconf-subsystem
+	PermitTTY no
+	AllowTcpForwarding no
+	X11Forwarding no
 ```
 
 ### DNSSEC SSHFP Retrieval

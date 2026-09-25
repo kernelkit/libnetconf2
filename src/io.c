@@ -104,7 +104,7 @@ nc_read(struct nc_session *session, char *buf, uint32_t count, uint32_t inact_ti
                     return -1;
                 }
             } else if (r == 0) {
-                ERR(session, "Communication file descriptor (%d) unexpectedly closed.", fd);
+                VRB(session, "Communication file descriptor (%d) closed by the other side.", fd);
                 session->status = NC_STATUS_INVALID;
                 session->term_reason = NC_SESSION_TERM_DROPPED;
                 return -1;
@@ -447,7 +447,7 @@ nc_read_poll(struct nc_session *session, int io_timeout)
         /* Some poll() implementations may return POLLHUP|POLLIN when the other
          * side has closed but there is data left to read in the buffer. */
         if ((fds.revents & POLLHUP) && !(fds.revents & POLLIN)) {
-            ERR(session, "Communication channel unexpectedly closed.");
+            VRB(session, "Communication channel closed by the other side.");
             session->status = NC_STATUS_INVALID;
             session->term_reason = NC_SESSION_TERM_DROPPED;
             return -1;

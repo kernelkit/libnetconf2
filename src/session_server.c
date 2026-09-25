@@ -2173,10 +2173,11 @@ nc_ps_poll_session_io(struct nc_session *session, int io_timeout, time_t now_mon
             ret = NC_PSPOLL_ERROR;
         } else if (r > 0) {
             if (pfd.revents & (POLLHUP | POLLNVAL)) {
-                sprintf(msg, "Communication socket unexpectedly closed");
+                /* the peer closing the socket is how a session normally ends */
+                sprintf(msg, "Communication socket closed by the other side");
                 session->status = NC_STATUS_INVALID;
                 session->term_reason = NC_SESSION_TERM_DROPPED;
-                ret = NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR;
+                ret = NC_PSPOLL_SESSION_TERM;
             } else if (pfd.revents & POLLERR) {
                 sprintf(msg, "Communication socket error");
                 session->status = NC_STATUS_INVALID;
@@ -2234,6 +2235,11 @@ nc_ps_poll_sess(struct nc_ps_session *ps_session, time_t now_mono)
             switch (ret) {
             case NC_PSPOLL_SESSION_TERM | NC_PSPOLL_SESSION_ERROR:
                 ERR(ps_session->session, "%s.", msg);
+                ps_session->state = NC_PS_STATE_INVALID;
+                break;
+            case NC_PSPOLL_SESSION_TERM:
+                /* the peer went away, expected end of a session */
+                VRB(ps_session->session, "%s.", msg);
                 ps_session->state = NC_PS_STATE_INVALID;
                 break;
             case NC_PSPOLL_ERROR:

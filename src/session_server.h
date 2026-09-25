@@ -462,6 +462,22 @@ NC_MSG_TYPE nc_ps_accept_ssh_channel(struct nc_pollsession *ps, struct nc_sessio
 int nc_server_set_unix_socket_path(const char *endpoint_name, const char *socket_path);
 
 /**
+ * @brief Create a UNIX socket listen endpoint without any YANG configuration.
+ *
+ * For servers that run behind an SSH daemon and do not implement
+ * ietf-netconf-server.  The endpoint starts listening immediately and
+ * behaves like a "hidden-path" UNIX endpoint: clients are authenticated by
+ * their socket peer credentials and there are no user mappings, so the
+ * NETCONF username must be the system username.
+ *
+ * @param[in] endpoint_name Name of the new endpoint, must be unique.
+ * @param[in] socket_path Absolute UNIX socket path to listen on.
+ * @param[in] mode Socket file permissions, (mode_t)-1 to leave them to umask.
+ * @return 0 on success, 1 on error.
+ */
+int nc_server_add_unix_endpt(const char *endpoint_name, const char *socket_path, mode_t mode);
+
+/**
  * @brief Get the UNIX socket path for a given endpoint name.
  *
  * @param[in] endpoint_name Name of the endpoint.

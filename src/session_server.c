@@ -4493,6 +4493,73 @@ cleanup:
 }
 
 API int
+nc_server_add_unix_endpt(const char *endpoint_name, const char *socket_path, mode_t mode)
+{
+    int rc = 0, r;
+    LY_ARRAY_COUNT_TYPE i;
+    struct nc_endpt *endpt = NULL;
+    struct nc_bind *bind = NULL;
+
+    NC_CHECK_ARG_RET(NULL, endpoint_name, socket_path, 1);
+
+    /* a hidden-path endpoint, its socket path is kept outside the configuration */
+    if (nc_server_set_unix_socket_path(endpoint_name, socket_path)) {
+        return 1;
+    }
+
+    /* CONFIG WRITE LOCK */
+    pthread_rwlock_wrlock(&server_opts.config_lock);
+
+    LY_ARRAY_FOR(server_opts.config.endpts, i) {
+        if (!strcmp(server_opts.config.endpts[i].name, endpoint_name)) {
+            ERR(NULL, "Endpoint \"%s\" already exists.", endpoint_name);
+            rc = 1;
+            goto cleanup;
+        }
+    }
+
+    LY_ARRAY_NEW_GOTO(NULL, server_opts.config.endpts, endpt, rc, cleanup);
+    if ((r = pthread_mutex_init(&endpt->bind_lock, NULL))) {
+        ERR(NULL, "Mutex init failed (%s).", strerror(r));
+        LY_ARRAY_DECREMENT_FREE(server_opts.config.endpts);
+        rc = 1;
+        goto cleanup;
+    }
+
+    endpt->name = strdup(endpoint_name);
+    NC_CHECK_ERRMEM_GOTO(!endpt->name, rc = 1, error);
+
+    endpt->ti = NC_TI_UNIX;
+    endpt->opts.unix = calloc(1, sizeof *endpt->opts.unix);
+    NC_CHECK_ERRMEM_GOTO(!endpt->opts.unix, rc = 1, error);
+    endpt->opts.unix->path_type = NC_UNIX_SOCKET_PATH_HIDDEN;
+    endpt->opts.unix->mode = mode;
+    endpt->opts.unix->uid = (uid_t)-1;
+    endpt->opts.unix->gid = (gid_t)-1;
+
+    LY_ARRAY_NEW_GOTO(NULL, endpt->binds, bind, rc, error);
+    bind->sock = -1;
+
+    if (nc_server_bind_and_listen(endpt, bind)) {
+        rc = 1;
+        goto error;
+    }
+    goto cleanup;
+
+error:
+    free(endpt->name);
+    free(endpt->opts.unix);
+    LY_ARRAY_FREE(endpt->binds);
+    pthread_mutex_destroy(&endpt->bind_lock);
+    LY_ARRAY_DECREMENT_FREE(server_opts.config.endpts);
+
+cleanup:
+    /* CONFIG WRITE UNLOCK */
+    pthread_rwlock_unlock(&server_opts.config_lock);
+    return rc;
+}
+
+API int
 nc_server_get_unix_socket_path(const char *endpoint_name, char **socket_path)
 {
     int rc = 0;

@@ -4068,6 +4068,11 @@ nc_server_config_netconf_server(const struct lyd_node *tree, int is_diff, struct
     struct lyd_node *subtree;
     enum nc_operation initial_op;
 
+    /* not loaded by a server that only listens on a UNIX socket */
+    if (!ly_ctx_get_module_implemented(LYD_CTX(tree), "ietf-netconf-server")) {
+        return 0;
+    }
+
     prev_lo = ly_log_options(0);
 
     /* try to find the netconf-server subtree */
@@ -5105,6 +5110,11 @@ nc_server_config_libnetconf2_netconf_server(const struct lyd_node *tree, int is_
     uint32_t prev_lo;
     struct lyd_node *subtree;
     enum nc_operation initial_op;
+
+    /* not loaded by a server that only listens on a UNIX socket */
+    if (!ly_ctx_get_module_implemented(LYD_CTX(tree), "libnetconf2-netconf-server")) {
+        return 0;
+    }
 
     prev_lo = ly_log_options(0);
 
